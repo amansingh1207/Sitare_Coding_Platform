@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: codingjudge-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-codingjudge}
+      POSTGRES_USER: ${DB_USER:-codingjudge}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_me_in_production}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-codingjudge}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: codingjudge-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-codingjudge}
+      DB_USER: ${DB_USER:-codingjudge}
+      DB_PASSWORD: ${DB_PASSWORD:-change_me_in_production}
+      JWT_SECRET: ${JWT_SECRET:-change_this_to_a_long_random_string_at_least_256_bits}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      JUDGE_DOCKER_IMAGE: ${JUDGE_DOCKER_IMAGE:-codingjudge/sandbox:latest}
+      JUDGE_TIMEOUT_MS: ${JUDGE_TIMEOUT_MS:-10000}
+      JUDGE_MEMORY_LIMIT_MB: ${JUDGE_MEMORY_LIMIT_MB:-256}
+      JUDGE_CPU_LIMIT: ${JUDGE_CPU_LIMIT:-1.0}
+      JUDGE_MAX_OUTPUT_SIZE_KB: ${JUDGE_MAX_OUTPUT_SIZE_KB:-64}
+      JUDGE_MAX_SOURCE_SIZE_KB: ${JUDGE_MAX_SOURCE_SIZE_KB:-256}
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: codingjudge-frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres_data:
