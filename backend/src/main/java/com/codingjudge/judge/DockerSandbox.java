@@ -105,7 +105,7 @@ public class DockerSandbox {
             // Compile first
             CompilationResult compileResult = compile(sourceCode, executor);
             if (!compileResult.success()) {
-                return ExecutionResult.error(compileResult.output(), compileResult.exitCode());
+                return ExecutionResult.compilationError(compileResult.output(), compileResult.exitCode());
             }
 
             // Execute

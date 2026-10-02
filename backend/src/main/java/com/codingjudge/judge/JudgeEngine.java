@@ -81,7 +81,10 @@ public class JudgeEngine {
     }
     
     private SubmissionStatus determineTestStatus(ExecutionResult result, String expectedOutput) {
-        if (result.timedOut()) {
+        if (result.isCompilationError()) {
+            return SubmissionStatus.COMPILATION_ERROR;
+        }
+        if (result.isTimedOut()) {
             return SubmissionStatus.TIME_LIMIT_EXCEEDED;
         }
         if (result.isOomKilled()) {
@@ -91,7 +94,7 @@ public class JudgeEngine {
             return SubmissionStatus.RUNTIME_ERROR;
         }
         
-        if (OutputComparator.compare(expectedOutput, result.output())) {
+        if (comparator.compare(expectedOutput, result.output())) {
             return SubmissionStatus.ACCEPTED;
         }
         return SubmissionStatus.WRONG_ANSWER;
