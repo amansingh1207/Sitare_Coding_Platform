@@ -4,6 +4,7 @@ import com.codingjudge.judge.executor.CppExecutor;
 import com.codingjudge.judge.executor.JavaExecutor;
 import com.codingjudge.judge.executor.PythonExecutor;
 import com.codingjudge.model.dto.response.SubmissionTestResultResponse;
+import com.codingjudge.model.entity.Problem;
 import com.codingjudge.model.entity.Submission;
 import com.codingjudge.model.entity.SubmissionTestResult;
 import com.codingjudge.model.entity.TestCase;
@@ -13,6 +14,7 @@ import com.codingjudge.repository.SubmissionTestResultRepository;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
@@ -42,40 +44,92 @@ public class JudgeEngine {
     public Submission judge(Submission submission) {
         Language language = submission.getLanguage();
         LanguageExecutor executor = getExecutor(language);
-        
+
         long timeoutMs = submission.getProblem().getTimeLimitMs();
         int memoryLimitMb = submission.getProblem().getMemoryLimitMb();
 
-        // Run compilation + all test cases via execute (which handles compilation internally)
-        List<TestCase> testCases = submission.getProblem().getTestCases();
+        // Compilation + every test case, folded into one verdict.
+        TestRunSummary summary = executeAgainst(
+                submission.getProblem().getTestCases(),
+                submission.getSourceCode(),
+                executor,
+                timeoutMs,
+                memoryLimitMb);
+
+        for (TestOutcome outcome : summary.outcomes()) {
+            SubmissionTestResult result = new SubmissionTestResult();
+            result.setSubmission(submission);
+            result.setTestCase(outcome.testCase());
+            result.setRuntimeMs((int) Math.min(outcome.runtimeMs(), Integer.MAX_VALUE));
+            result.setMemoryUsedKb((int) Math.min(outcome.memoryUsedKb(), Integer.MAX_VALUE));
+            result.setStatus(outcome.status());
+            result.setActualOutput(outcome.actualOutput());
+            testResultRepository.save(result);
+        }
+
+        submission.setStatus(summary.status());
+        if (summary.maxRuntimeMs() > 0) {
+            submission.setRuntimeMs((int) Math.min(summary.maxRuntimeMs(), Integer.MAX_VALUE));
+        }
+        if (summary.maxMemoryKb() > 0) {
+            submission.setMemoryUsedKb((int) Math.min(summary.maxMemoryKb(), Integer.MAX_VALUE));
+        }
+        submission.setJudgedAt(Instant.now());
+        return submission;
+    }
+
+    /**
+     * Runs code against a problem's sample test cases only, persisting nothing.
+     *
+     * This backs the editor's "Run" button. Hidden test cases are never touched,
+     * so running can never reveal them, and no Submission row is created.
+     */
+    public TestRunSummary runSamples(Problem problem, String sourceCode, Language language) {
+        List<TestCase> samples = problem.getTestCases().stream()
+                .filter(testCase -> Boolean.TRUE.equals(testCase.getSample()))
+                .toList();
+        if (samples.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Problem '" + problem.getSlug() + "' has no sample test cases to run against");
+        }
+        return executeAgainst(
+                samples,
+                sourceCode,
+                getExecutor(language),
+                problem.getTimeLimitMs(),
+                problem.getMemoryLimitMb());
+    }
+
+    /** Executes the source once per test case and folds the results into a verdict. */
+    private TestRunSummary executeAgainst(List<TestCase> testCases,
+                                          String sourceCode,
+                                          LanguageExecutor executor,
+                                          long timeoutMs,
+                                          int memoryLimitMb) {
         boolean allAccepted = true;
         SubmissionStatus verdict = null;
         long maxRuntimeMs = 0;
         long maxMemoryKb = 0;
-        
+        List<TestOutcome> outcomes = new ArrayList<>(testCases.size());
+
         for (TestCase testCase : testCases) {
             ExecutionResult execResult = sandbox.execute(
-                    submission.getSourceCode(),
+                    sourceCode,
                     testCase.getInputData(),
                     executor,
                     timeoutMs,
-                    memoryLimitMb
-            );
-            
-            SubmissionTestResult result = new SubmissionTestResult();
-            result.setSubmission(submission);
-            result.setTestCase(testCase);
-            result.setRuntimeMs((int) execResult.runtimeMs());
-            result.setMemoryUsedKb((int) execResult.memoryUsedKb());
-            
+                    memoryLimitMb);
+
             SubmissionStatus testStatus = determineTestStatus(execResult, testCase.getExpectedOutput());
-            result.setStatus(testStatus);
-            result.setActualOutput(execResult.output());
+            outcomes.add(new TestOutcome(
+                    testCase,
+                    testStatus,
+                    visibleOutput(execResult),
+                    execResult.runtimeMs(),
+                    execResult.memoryUsedKb()));
 
-            testResultRepository.save(result);
-
-            // Submission-level metrics report the worst case across all test cases,
-            // which is what a student cares about when tuning limits.
+            // Metrics report the worst case across all test cases, which is what
+            // a student cares about when tuning limits.
             maxRuntimeMs = Math.max(maxRuntimeMs, execResult.runtimeMs());
             maxMemoryKb = Math.max(maxMemoryKb, execResult.memoryUsedKb());
 
@@ -85,16 +139,43 @@ public class JudgeEngine {
                 verdict = worseOf(verdict, testStatus);
             }
         }
-        
-        submission.setStatus(allAccepted ? SubmissionStatus.ACCEPTED : verdict);
-        if (maxRuntimeMs > 0) {
-            submission.setRuntimeMs((int) Math.min(maxRuntimeMs, Integer.MAX_VALUE));
+
+        return new TestRunSummary(
+                outcomes,
+                allAccepted ? SubmissionStatus.ACCEPTED : verdict,
+                maxRuntimeMs,
+                maxMemoryKb);
+    }
+
+    /**
+     * The output a student is allowed to see.
+     *
+     * Compiler diagnostics and runtime stack traces arrive on the error stream
+     * rather than stdout, so falling back to it is what makes a failed
+     * submission actionable instead of an empty output box.
+     */
+    private String visibleOutput(ExecutionResult result) {
+        String output = result.output();
+        if (output != null && !output.isBlank()) {
+            return output;
         }
-        if (maxMemoryKb > 0) {
-            submission.setMemoryUsedKb((int) Math.min(maxMemoryKb, Integer.MAX_VALUE));
-        }
-        submission.setJudgedAt(Instant.now());
-        return submission;
+        String error = result.error();
+        return error == null ? output : error;
+    }
+
+    /** Per-test-case outcome, before it is either persisted or returned. */
+    public record TestOutcome(TestCase testCase,
+                              SubmissionStatus status,
+                              String actualOutput,
+                              long runtimeMs,
+                              long memoryUsedKb) {
+    }
+
+    /** Aggregate verdict for a set of executed test cases. */
+    public record TestRunSummary(List<TestOutcome> outcomes,
+                                 SubmissionStatus status,
+                                 long maxRuntimeMs,
+                                 long maxMemoryKb) {
     }
 
     /**

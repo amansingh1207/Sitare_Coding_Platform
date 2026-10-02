@@ -5,6 +5,7 @@ import com.codingjudge.exception.PayloadTooLargeException;
 import com.codingjudge.exception.ResourceNotFoundException;
 import com.codingjudge.judge.JudgeEngine;
 import com.codingjudge.model.dto.request.SubmitRequest;
+import com.codingjudge.model.dto.response.RunResultResponse;
 import com.codingjudge.model.dto.response.SubmissionDetailResponse;
 import com.codingjudge.model.dto.response.SubmissionRefResponse;
 import com.codingjudge.model.dto.response.SubmissionSummaryResponse;
@@ -74,6 +75,25 @@ public class SubmissionService {
         submissionRepository.save(submission);
 
         return SubmissionRefResponse.from(submission);
+    }
+
+    /**
+     * Runs code against a problem's sample test cases without recording a submission.
+     *
+     * Nothing is persisted, so this cannot pollute submission history, and only
+     * sample test cases are executed, so hidden ones stay unreachable.
+     */
+    @Transactional(readOnly = true)
+    public RunResultResponse run(String email, SubmitRequest request) {
+        requireUser(email);
+        Problem problem = problemRepository.findById(request.getProblemId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Problem not found: " + request.getProblemId()));
+        Language language = parseLanguage(request.getLanguage());
+        requireSourceSize(request.getSourceCode());
+
+        return RunResultResponse.from(
+                judgeEngine.runSamples(problem, request.getSourceCode(), language));
     }
 
     @Transactional(readOnly = true)

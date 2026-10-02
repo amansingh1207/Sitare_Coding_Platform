@@ -376,6 +376,42 @@ regress. Each was found by live validation, not review:
    throws "dockerCmdExecFactory was not specified" on first use.
 10. **A class with two constructors needs `@Autowired`** on the DI constructor,
     otherwise Spring silently uses the no-arg one and injects nulls.
+11. **An exec command cannot carry a whole submission.** Base64 inflates source by
+    a third, and past roughly 90 KB the shell rejects the argument list (exit 255).
+    Files are staged in 24 000-character chunks and decoded in place.
+
+---
+
+## 11.7 Two Entry Points, One Verdict Engine
+
+`JudgeEngine` exposes two ways in, both built on the same private
+`executeAgainst` loop so verdict rules can never drift apart:
+
+| Entry point | Test cases used | Persists | Used by |
+|-------------|-----------------|----------|---------|
+| `judge(submission)` | All of them | Yes: one `Submission` plus a result row per case | Submit |
+| `runSamples(problem, source, language)` | Sample cases only | No | Run |
+
+`runSamples` is what makes "Run" safe: hidden test cases are never loaded into
+the execution loop, so no amount of probing can reveal them, and no submission
+row is created, so iterating in the editor cannot pollute history.
+
+**Error output is visible.** Compiler diagnostics and stack traces arrive on the
+container's stderr, not stdout. `visibleOutput` falls back to the error stream
+when stdout is blank, which is what turns `COMPILATION_ERROR` and
+`RUNTIME_ERROR` from an empty box into something a student can act on.
+
+Live verification (2026-10-02, real Docker sandbox, problem `sum-two`):
+
+| Check | Result |
+|-------|--------|
+| `POST /api/submissions/run` for JAVA / CPP / PYTHON | `ACCEPTED` in all three |
+| Submission count before and after a run | Unchanged (74 → 74) |
+| Run response test-case count | 1, the sample only |
+| Hidden input/output present in run response | Absent |
+| Compilation error message returned | `Main.java:1: error: ';' expected` |
+| Python traceback returned | Full traceback included |
+| Submit, detail and history after the refactor | `ACCEPTED`, 1 visible result, history updated |
 
 ---
 

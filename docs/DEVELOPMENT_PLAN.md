@@ -357,18 +357,29 @@ in `docs/SECURITY.md` section 11.
 
 ## Phase 14 — Integration Testing
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02)
 
 **Goal:** Test the complete user flow end-to-end.
 
 **Deliverables:**
-- [ ] End-to-end integration tests
-- [ ] Full user flow tests
+- [x] End-to-end integration tests (`FullUserFlowIntegrationTest`, 18 tests)
+- [x] Full user flow tests, plus live verification against real Docker
 
 **Acceptance Criteria:**
-- [ ] Register → Login → Browse → Solve → Run → Submit → View Result → View History
-- [ ] All flows work correctly
-- [ ] All edge cases handled
+- [x] Register → Login → Browse → Solve → Run → Submit → View Result → View History
+- [x] All flows work correctly
+- [x] All edge cases handled
+
+**Issues found and fixed:**
+- `POST /api/submissions/run` was specified in `docs/API_SPEC.md` and called by
+  the editor's Run button, but was never implemented. The Run button returned
+  404 for every click. Implemented, and it now runs against sample test cases
+  only without creating a submission.
+- Compiler diagnostics and runtime stack traces were discarded: `JudgeEngine`
+  stored only the stdout stream, while all errors arrive on stderr. A failed
+  submission showed an empty output box. Both now surface to the student.
+
+Both were invisible to unit tests and only surfaced by exercising the flow.
 
 ---
 

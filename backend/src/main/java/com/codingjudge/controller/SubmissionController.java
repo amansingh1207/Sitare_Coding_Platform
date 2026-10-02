@@ -2,6 +2,7 @@ package com.codingjudge.controller;
 
 import com.codingjudge.model.dto.ApiResponse;
 import com.codingjudge.model.dto.request.SubmitRequest;
+import com.codingjudge.model.dto.response.RunResultResponse;
 import com.codingjudge.model.dto.response.SubmissionDetailResponse;
 import com.codingjudge.model.dto.response.SubmissionRefResponse;
 import com.codingjudge.model.dto.response.SubmissionSummaryResponse;
@@ -44,6 +45,14 @@ public class SubmissionController {
         SubmissionRefResponse ref =
                 submissionService.submit(userDetails.getUsername(), request);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.ok(ref));
+    }
+
+    @PostMapping("/run")
+    public ResponseEntity<ApiResponse<RunResultResponse>> runCode(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody SubmitRequest request) {
+        RunResultResponse result = submissionService.run(userDetails.getUsername(), request);
+        return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
     @GetMapping("/{id}")
