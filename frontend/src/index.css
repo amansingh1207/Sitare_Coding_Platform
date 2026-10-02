@@ -220,6 +220,81 @@ button:disabled {
   margin-top: 1rem;
 }
 
+.submission-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+
+.submission-table th,
+.submission-table td {
+  border-bottom: 1px solid #ddd;
+  padding: 0.6rem;
+  text-align: left;
+  font-size: 0.95rem;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #ecf0f1;
+  color: #2c3e50;
+}
+
+.status-badge--accepted {
+  background: #d4efdf;
+  color: #1e8449;
+}
+
+.status-badge--wrong_answer,
+.status-badge--compilation_error,
+.status-badge--runtime_error,
+.status-badge--time_limit_exceeded,
+.status-badge--memory_limit_exceeded,
+.status-badge--internal_error {
+  background: #fadbd8;
+  color: #922b21;
+}
+
+.status-badge--pending,
+.status-badge--judging {
+  background: #fdebd0;
+  color: #9c640c;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.submission-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.4rem 1.5rem;
+  margin: 1rem 0;
+}
+
+.submission-meta dt {
+  font-weight: 600;
+  color: #566573;
+}
+
+.submission-meta dd {
+  margin: 0;
+}
+
+.code-viewer {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
 @media (max-width: 900px) {
   .problem-detail-page {
     grid-template-columns: 1fr;

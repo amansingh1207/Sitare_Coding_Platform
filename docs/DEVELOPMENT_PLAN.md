@@ -275,20 +275,28 @@ This plan breaks the project into small, independently testable phases. Each pha
 
 ## Phase 11 — Submission History
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02)
 
 **Goal:** Implement submission history UI.
 
 **Deliverables:**
-- [ ] Submission history page
-- [ ] Submission detail view
-- [ ] Source code viewer
+- [x] Submission history page (paginated table with status badges)
+- [x] Submission detail view (metadata, metrics, sample results)
+- [x] Source code viewer (read-only, syntax highlighted)
 
 **Acceptance Criteria:**
-- [ ] Students can view their submission history
-- [ ] Each submission shows problem, language, status, runtime, memory, time
-- [ ] Students can view submitted source code
-- [ ] Hidden test case contents are not shown
+- [x] Students can view their submission history
+- [x] Each submission shows problem, language, status, runtime, memory, time
+- [x] Students can view submitted source code
+- [x] Hidden test case contents are not shown
+
+**Notes:**
+- The judge previously left `runtimeMs`, `memoryUsedKb` and `judgedAt` unset, so
+  every row rendered as unknown. The judge now records wall-clock runtime,
+  peak memory (cgroup `memory.peak`) and the judged timestamp, reporting the
+  worst case across test cases.
+- Verified live: list excludes `sourceCode`; detail returns source and only
+  sample test results; hidden test inputs are absent from both responses.
 
 ---
 

@@ -178,10 +178,12 @@ public class DockerSandbox {
                 }
             };
 
+            long startedAtNanos = System.nanoTime();
             boolean completed = dockerClient.execStartCmd(exec.getId())
                     .exec(callback)
                     .awaitCompletion(timeoutMs, TimeUnit.MILLISECONDS);
             callback.close();
+            long runtimeMs = (System.nanoTime() - startedAtNanos) / 1_000_000L;
 
             if (!completed) {
                 // Execution outran the time limit. The container is killed and
@@ -189,6 +191,8 @@ public class DockerSandbox {
                 LOG.warn("Sandbox execution exceeded {} ms", timeoutMs);
                 return ExecutionResult.timeout();
             }
+
+            long peakMemoryKb = readPeakMemoryKb(containerId);
 
             InspectExecResponse inspect = dockerClient.inspectExecCmd(exec.getId()).exec();
             int exitCode = inspect.getExitCode();
@@ -203,7 +207,7 @@ public class DockerSandbox {
                         exitCode, truncateForLog(err));
                 return ExecutionResult.error(stderr.toString(), exitCode);
             }
-            return ExecutionResult.success(stdout.toString(), 0, 0);
+            return ExecutionResult.success(stdout.toString(), runtimeMs, peakMemoryKb);
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -301,6 +305,45 @@ public class DockerSandbox {
             }
         } catch (Exception e) {
             throw new RuntimeException("Failed to write source to container: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Reads peak memory usage for the container from cgroup v2 (or v1 fallback).
+     * Returns 0 when the value cannot be read, which the UI renders as unknown.
+     */
+    private long readPeakMemoryKb(String containerId) {
+        try {
+            ExecCreateCmdResponse exec = dockerClient.execCreateCmd(containerId)
+                    .withCmd("sh", "-c",
+                            "cat /sys/fs/cgroup/memory.peak 2>/dev/null "
+                            + "|| cat /sys/fs/cgroup/memory/memory.max_usage_in_bytes 2>/dev/null")
+                    .withAttachStdout(true)
+                    .withAttachStderr(true)
+                    .exec();
+
+            StringBuilder out = new StringBuilder();
+            dockerClient.execStartCmd(exec.getId())
+                    .exec(new ResultCallback.Adapter<Frame>() {
+                        @Override
+                        public void onNext(Frame frame) {
+                            if (frame.getStreamType() == StreamType.STDOUT) {
+                                out.append(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                            }
+                        }
+                    })
+                    .awaitCompletion(5, TimeUnit.SECONDS);
+
+            String value = out.toString().trim();
+            if (value.isEmpty()) {
+                return 0;
+            }
+            long bytes = Long.parseLong(value);
+            // cgroup reports bytes; the API stores kilobytes.
+            return bytes / 1024L;
+        } catch (Exception e) {
+            LOG.debug("Could not read peak memory: {}", e.getMessage());
+            return 0;
         }
     }
 

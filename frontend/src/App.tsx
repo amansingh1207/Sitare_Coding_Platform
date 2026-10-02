@@ -5,6 +5,8 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ProblemListPage } from './pages/ProblemListPage';
 import { ProblemDetailPage } from './pages/ProblemDetailPage';
+import { SubmissionHistoryPage } from './pages/SubmissionHistoryPage';
+import { SubmissionDetailPage } from './pages/SubmissionDetailPage';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -34,6 +36,7 @@ function Header() {
       <nav>
         {user ? (
           <>
+            <Link to="/submissions">Submissions</Link>
             <span>{user.username}</span>
             <button type="button" onClick={handleLogout}>
               Logout
@@ -72,6 +75,22 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ProblemDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/submissions"
+              element={
+                <ProtectedRoute>
+                  <SubmissionHistoryPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/submissions/:id"
+              element={
+                <ProtectedRoute>
+                  <SubmissionDetailPage />
                 </ProtectedRoute>
               }
             />

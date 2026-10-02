@@ -12,7 +12,7 @@ import com.codingjudge.model.enums.SubmissionStatus;
 import com.codingjudge.repository.SubmissionTestResultRepository;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
+import java.time.Instant;
 import java.util.List;
 
 @Component
@@ -50,6 +50,8 @@ public class JudgeEngine {
         List<TestCase> testCases = submission.getProblem().getTestCases();
         boolean allAccepted = true;
         SubmissionStatus verdict = null;
+        long maxRuntimeMs = 0;
+        long maxMemoryKb = 0;
         
         for (TestCase testCase : testCases) {
             ExecutionResult execResult = sandbox.execute(
@@ -69,9 +71,14 @@ public class JudgeEngine {
             SubmissionStatus testStatus = determineTestStatus(execResult, testCase.getExpectedOutput());
             result.setStatus(testStatus);
             result.setActualOutput(execResult.output());
-            
+
             testResultRepository.save(result);
-            
+
+            // Submission-level metrics report the worst case across all test cases,
+            // which is what a student cares about when tuning limits.
+            maxRuntimeMs = Math.max(maxRuntimeMs, execResult.runtimeMs());
+            maxMemoryKb = Math.max(maxMemoryKb, execResult.memoryUsedKb());
+
             if (testStatus != SubmissionStatus.ACCEPTED) {
                 allAccepted = false;
                 // Keep the most specific failure reason (docs/JUDGE_DESIGN.md section 9).
@@ -80,6 +87,13 @@ public class JudgeEngine {
         }
         
         submission.setStatus(allAccepted ? SubmissionStatus.ACCEPTED : verdict);
+        if (maxRuntimeMs > 0) {
+            submission.setRuntimeMs((int) Math.min(maxRuntimeMs, Integer.MAX_VALUE));
+        }
+        if (maxMemoryKb > 0) {
+            submission.setMemoryUsedKb((int) Math.min(maxMemoryKb, Integer.MAX_VALUE));
+        }
+        submission.setJudgedAt(Instant.now());
         return submission;
     }
 
