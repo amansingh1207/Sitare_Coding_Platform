@@ -230,19 +230,20 @@ This plan breaks the project into small, independently testable phases. Each pha
 
 ## Phase 9 — Python Support
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02)
 
-**Goal:** Add Python execution.
+**Goal:** Add Python execution through the language abstraction.
 
 **Deliverables:**
-- [ ] Python executor
-- [ ] Python judge tests
+- [x] Python executor
+- [x] Python judge tests
 
 **Acceptance Criteria:**
-- [ ] Correct Python solution → ACCEPTED
-- [ ] Incorrect Python solution → WRONG_ANSWER
-- [ ] Python runtime error → RUNTIME_ERROR
-- [ ] Python infinite loop → TIME_LIMIT_EXCEEDED
+- [x] Correct Python solution → ACCEPTED
+- [x] Incorrect Python solution → WRONG_ANSWER
+- [x] Python runtime error → RUNTIME_ERROR
+- [x] Python infinite loop → TIME_LIMIT_EXCEEDED
+- [x] Python excessive memory → MEMORY_LIMIT_EXCEEDED
 
 ---
 
