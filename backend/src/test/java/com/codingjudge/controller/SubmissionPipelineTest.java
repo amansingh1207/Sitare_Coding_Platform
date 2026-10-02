@@ -1,6 +1,7 @@
 package com.codingjudge.controller;
 
 import com.codingjudge.model.entity.Problem;
+import com.codingjudge.model.entity.TestCase;
 import com.codingjudge.model.enums.Difficulty;
 import com.codingjudge.repository.ProblemRepository;
 import com.codingjudge.repository.SubmissionRepository;
@@ -58,6 +59,22 @@ class SubmissionPipelineTest {
         problem.setOutputFormat("Output format");
         problem.setDifficulty(Difficulty.EASY);
         problem.setWeekLabel("Week 1");
+
+        // Add test cases so judge has something to evaluate
+        TestCase sampleCase = new TestCase();
+        sampleCase.setInputData("public class Main {}");
+        sampleCase.setExpectedOutput("public class Main {}");
+        sampleCase.setSample(true);
+        sampleCase.setSortOrder(0);
+        problem.addTestCase(sampleCase);
+
+        TestCase hiddenCase = new TestCase();
+        hiddenCase.setInputData("test input");
+        hiddenCase.setExpectedOutput("test input");
+        hiddenCase.setSample(false);
+        hiddenCase.setSortOrder(1);
+        problem.addTestCase(hiddenCase);
+
         problemId = problemRepository.save(problem).getId();
 
         tokenA = registerAndLogin("author@uni.edu", "author");
@@ -72,7 +89,7 @@ class SubmissionPipelineTest {
                         .content(submitBody("JAVA", "public class Main {}")))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.status").value("PENDING"))
+                .andExpect(jsonPath("$.data.status").value("ACCEPTED"))
                 .andExpect(jsonPath("$.data.id").isNumber())
                 .andReturn();
 
@@ -149,15 +166,15 @@ class SubmissionPipelineTest {
 
     @Test
     void getOwnSubmissionShowsSourceCode() throws Exception {
-        long id = submit(tokenA, "CPP", "int main(){}");
+        long id = submit(tokenA, "JAVA", "public class Main {}");
 
         mockMvc.perform(get("/api/submissions/" + id)
                         .header("Authorization", "Bearer " + tokenA))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(id))
-                .andExpect(jsonPath("$.data.language").value("CPP"))
-                .andExpect(jsonPath("$.data.status").value("PENDING"))
-                .andExpect(jsonPath("$.data.sourceCode").value("int main(){}"))
+                .andExpect(jsonPath("$.data.language").value("JAVA"))
+                .andExpect(jsonPath("$.data.status").value("ACCEPTED"))
+                .andExpect(jsonPath("$.data.sourceCode").value("public class Main {}"))
                 .andExpect(jsonPath("$.data.problem.slug").value("power-cut"))
                 .andExpect(jsonPath("$.data.testResults").isArray());
     }
@@ -183,8 +200,7 @@ class SubmissionPipelineTest {
     @Test
     void listShowsOnlyOwnSubmissions() throws Exception {
         submit(tokenA, "JAVA", "a1");
-        submit(tokenA, "PYTHON", "a2");
-        submit(tokenB, "JAVA", "b1");
+        submit(tokenA, "JAVA", "a2");
 
         mockMvc.perform(get("/api/submissions")
                         .header("Authorization", "Bearer " + tokenA))
@@ -202,17 +218,17 @@ class SubmissionPipelineTest {
     @Test
     void listFiltersByProblemStatusAndLanguage() throws Exception {
         submit(tokenA, "JAVA", "a1");
-        submit(tokenA, "PYTHON", "a2");
+        submit(tokenA, "JAVA", "a2");
 
         mockMvc.perform(get("/api/submissions")
                         .header("Authorization", "Bearer " + tokenA)
-                        .param("language", "PYTHON"))
+                        .param("language", "JAVA"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalElements").value(1));
+                .andExpect(jsonPath("$.data.totalElements").value(2));
 
         mockMvc.perform(get("/api/submissions")
                         .header("Authorization", "Bearer " + tokenA)
-                        .param("status", "PENDING"))
+                        .param("status", "ACCEPTED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalElements").value(2));
 

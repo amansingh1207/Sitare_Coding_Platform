@@ -1,5 +1,8 @@
 package com.codingjudge.judge;
 
+import org.springframework.stereotype.Component;
+
+@Component
 public class OutputComparator {
 
     /**
