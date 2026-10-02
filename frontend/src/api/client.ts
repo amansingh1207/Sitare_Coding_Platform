@@ -1,7 +1,7 @@
 import type { ApiResponse } from '../types';
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api';
+  import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 export class ApiError extends Error {
   status: number;
@@ -45,9 +45,13 @@ async function parseEnvelope<T>(response: Response): Promise<T> {
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> | undefined),
   };
+  // Only send JSON content type for non-FormData bodies so the browser
+  // can set the multipart boundary itself for file uploads.
+  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
   const token = getToken();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
