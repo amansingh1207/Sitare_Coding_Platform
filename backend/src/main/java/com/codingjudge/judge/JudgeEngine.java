@@ -49,6 +49,7 @@ public class JudgeEngine {
         // Run compilation + all test cases via execute (which handles compilation internally)
         List<TestCase> testCases = submission.getProblem().getTestCases();
         boolean allAccepted = true;
+        SubmissionStatus verdict = null;
         
         for (TestCase testCase : testCases) {
             ExecutionResult execResult = sandbox.execute(
@@ -73,11 +74,37 @@ public class JudgeEngine {
             
             if (testStatus != SubmissionStatus.ACCEPTED) {
                 allAccepted = false;
+                // Keep the most specific failure reason (docs/JUDGE_DESIGN.md section 9).
+                verdict = worseOf(verdict, testStatus);
             }
         }
         
-        submission.setStatus(allAccepted ? SubmissionStatus.ACCEPTED : SubmissionStatus.WRONG_ANSWER);
+        submission.setStatus(allAccepted ? SubmissionStatus.ACCEPTED : verdict);
         return submission;
+    }
+
+    /**
+     * Severity order for a submission verdict. A compilation failure is more
+     * fundamental than a limit breach, which is more fundamental than a crash,
+     * which is more fundamental than a plain wrong answer.
+     */
+    private SubmissionStatus worseOf(SubmissionStatus current, SubmissionStatus candidate) {
+        if (current == null) {
+            return candidate;
+        }
+        return severity(candidate) > severity(current) ? candidate : current;
+    }
+
+    private int severity(SubmissionStatus status) {
+        return switch (status) {
+            case WRONG_ANSWER -> 1;
+            case RUNTIME_ERROR -> 2;
+            case MEMORY_LIMIT_EXCEEDED -> 3;
+            case TIME_LIMIT_EXCEEDED -> 4;
+            case COMPILATION_ERROR -> 5;
+            case INTERNAL_ERROR -> 6;
+            default -> 0;
+        };
     }
     
     private SubmissionStatus determineTestStatus(ExecutionResult result, String expectedOutput) {

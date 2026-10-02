@@ -11,7 +11,7 @@ public class OutputComparator {
      * - Compare token by token
      * - Ignores trailing/leading whitespace, multiple spaces, blank lines
      */
-    public static boolean compare(String expected, String actual) {
+    public boolean compare(String expected, String actual) {
         if (expected == null || actual == null) {
             return expected == actual;
         }
