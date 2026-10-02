@@ -23,6 +23,8 @@ import java.util.concurrent.TimeUnit;
 public class DockerSandbox {
 
     private static final long COMPILE_TIMEOUT_SECONDS = 30;
+    /** Base64 characters per exec call. Keeps each command well under the shell arg limit. */
+    private static final int CHUNK_CHARS = 24_000;
     private static final java.util.regex.Pattern SAFE_FILE_NAME =
             java.util.regex.Pattern.compile("[A-Za-z0-9_.-]{1,64}");
     private static final int MAX_LOGGED_CHARS = 500;
@@ -282,29 +284,70 @@ public class DockerSandbox {
         if (!SAFE_FILE_NAME.matcher(fileName).matches()) {
             throw new IllegalArgumentException("Unsafe source file name: " + fileName);
         }
+        writeFileInChunks(containerId, "/workspace/" + fileName, sourceCode);
+    }
 
-        String encoded = Base64.getEncoder()
-                .encodeToString(sourceCode.getBytes(StandardCharsets.UTF_8));
+    /**
+     * Writes a file inside the container by streaming base64 chunks through
+     * separate small exec calls.
+     *
+     * A single-command write fails for anything above roughly 90 KB of source:
+     * base64 inflates the payload by a third and the resulting exec command
+     * exceeds the shell's argument limit ("exit 255"). Since the platform
+     * accepts up to 256 KB of source, the payload must be chunked.
+     *
+     * Base64 output is shell-safe (only A-Z a-z 0-9 + / =), and the target path
+     * is built from validated inputs, so no student data is interpreted by the shell.
+     */
+    private void writeFileInChunks(String containerId, String targetPath, String content) {
+        String encoded = Base64.getEncoder().encodeToString(content.getBytes(StandardCharsets.UTF_8));
+        String stagingPath = "/tmp/.staged.b64";
 
         try {
+            int offset = 0;
+            boolean first = true;
+            while (offset < encoded.length()) {
+                int end = Math.min(offset + CHUNK_CHARS, encoded.length());
+                String chunk = encoded.substring(offset, end);
+                // Truncate on the first chunk, append on the rest.
+                String redirect = first ? ">" : ">>";
+                runShell(containerId, "echo " + chunk + " " + redirect + " " + stagingPath);
+                first = false;
+                offset = end;
+            }
+            if (first) {
+                // Empty content still needs to produce an empty file.
+                runShell(containerId, ": > " + stagingPath);
+            }
+            runShell(containerId, "base64 -d " + stagingPath + " > " + targetPath);
+            runShell(containerId, "rm -f " + stagingPath);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to write file into container: " + e.getMessage(), e);
+        }
+    }
+
+    /** Runs a shell command inside the container, throwing if it exits non-zero. */
+    private void runShell(String containerId, String command) {
+        try {
             ExecCreateCmdResponse exec = dockerClient.execCreateCmd(containerId)
-                    .withCmd("sh", "-c", "echo " + encoded + " | base64 -d > /workspace/" + fileName)
-                    .withWorkingDir("/workspace")
+                    .withCmd("sh", "-c", command)
                     .withAttachStdout(true)
                     .withAttachStderr(true)
                     .exec();
 
             dockerClient.execStartCmd(exec.getId())
-                    .exec(new ResultCallback.Adapter())
+                    .exec(new ResultCallback.Adapter<>())
                     .awaitCompletion(30, TimeUnit.SECONDS);
 
             InspectExecResponse inspect = dockerClient.inspectExecCmd(exec.getId()).exec();
             if (inspect.getExitCode() != 0) {
                 throw new IllegalStateException(
-                        "Failed to write source into container (exit " + inspect.getExitCode() + ")");
+                        "Command failed with exit " + inspect.getExitCode());
             }
+        } catch (IllegalStateException e) {
+            throw e;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to write source to container: " + e.getMessage(), e);
+            throw new RuntimeException(e.getMessage(), e);
         }
     }
 
@@ -369,21 +412,7 @@ public class DockerSandbox {
 
     /** Writes the test-case input to /tmp/input.txt so it can be redirected into the program. */
     private void writeInputFile(String containerId, String input) {
-        String encoded = Base64.getEncoder()
-                .encodeToString((input != null ? input : "").getBytes(StandardCharsets.UTF_8));
-        try {
-            ExecCreateCmdResponse exec = dockerClient.execCreateCmd(containerId)
-                    .withCmd("sh", "-c", "echo " + encoded + " | base64 -d > /tmp/input.txt")
-                    .withAttachStdout(true)
-                    .withAttachStderr(true)
-                    .exec();
-
-            dockerClient.execStartCmd(exec.getId())
-                    .exec(new ResultCallback.Adapter())
-                    .awaitCompletion(30, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to write test input: " + e.getMessage(), e);
-        }
+        writeFileInChunks(containerId, "/tmp/input.txt", input != null ? input : "");
     }
 
     /**

@@ -328,21 +328,30 @@ This plan breaks the project into small, independently testable phases. Each pha
 
 ## Phase 13 — Security Hardening
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02)
 
 **Goal:** Review and harden security.
 
 **Deliverables:**
-- [ ] Security audit
-- [ ] Penetration testing
-- [ ] Security test suite
-- [ ] Documentation update
+- [x] Security audit (code review + live adversarial testing)
+- [x] Penetration testing (11 sandbox escape attempts, 10 API checks)
+- [x] Security test suite (`ApiSecurityTest`, 13 tests)
+- [x] Documentation update (`docs/SECURITY.md` sections 9-11)
 
 **Acceptance Criteria:**
-- [ ] All security tests pass
-- [ ] No critical vulnerabilities
-- [ ] Sandbox escape tests pass
-- [ ] API security tests pass
+- [x] All security tests pass (93 backend tests green)
+- [x] No critical vulnerabilities
+- [x] Sandbox escape tests pass (all 11 attempts contained)
+- [x] API security tests pass
+
+**Issues found and fixed:**
+- Submissions above ~90 KB failed silently (exec argument limit) — writes are
+  now chunked. Verified 14 KB to 215 KB all succeed.
+- Stale `Submission.testResults` collection made the detail endpoint return an
+  empty test list — now read through the repository.
+
+**Remaining risk:** no rate limiting on login or submission endpoints. Recorded
+in `docs/SECURITY.md` section 11.
 
 ---
 

@@ -83,8 +83,12 @@ public class SubmissionService {
                 .orElseThrow(() -> new ResourceNotFoundException("Submission not found: " + id));
         requireOwnership(user, submission);
 
-        // Only sample test case results are ever exposed.
-        List<SubmissionTestResultResponse> results = submission.getTestResults().stream()
+        // Read results through the repository rather than the Submission's
+        // in-memory collection: the judge saves results directly, which leaves
+        // that collection stale within the same persistence context.
+        List<SubmissionTestResultResponse> results = testResultRepository
+                .findBySubmissionId(submission.getId())
+                .stream()
                 .filter(result -> Boolean.TRUE.equals(result.getTestCase().getSample()))
                 .map(SubmissionTestResultResponse::from)
                 .toList();

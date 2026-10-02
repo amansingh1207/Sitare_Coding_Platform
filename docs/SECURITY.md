@@ -248,15 +248,69 @@ Recommended limits:
 
 ## 9. Security Testing
 
-The following tests must pass before deployment:
+Automated: `ApiSecurityTest` (13 tests) covers authentication, authorization,
+hidden-test isolation, payload limits and password handling.
 
-- [ ] Student code cannot access the network
-- [ ] Student code cannot read files outside `/tmp`
-- [ ] Student code cannot spawn more than 64 processes
-- [ ] Student code cannot use more than 256 MB of memory
-- [ ] Student code cannot access the Docker socket
-- [ ] Student code cannot read environment variables
-- [ ] Containers are destroyed after execution
-- [ ] Hidden test cases are never returned by the API
-- [ ] Users cannot access other users' submissions
-- [ ] All endpoints require authentication (except auth)
+Verified manually against a live judge (2026-10-02):
+
+### 9.1 Sandbox Escape Attempts
+
+Adversarial submissions were run through the real judge. All were contained:
+
+| Attempt | Result |
+|---------|--------|
+| Read `/etc/passwd` | Container's own file only |
+| Connect to Docker socket | Blocked |
+| TCP egress to 1.1.1.1:53 | Blocked |
+| DNS lookup of external host | Blocked |
+| Write to `/etc` | Blocked (read-only rootfs) |
+| Read `JWT`/`PASS`/`SECRET` env vars | Empty list |
+| Read `/proc/1/environ` | Container env only, no app secrets |
+| Fork bomb (500 forks) | Blocked at 63 processes |
+| Read `/root` | Permission denied |
+| Check for host paths (`/c/Users`) | Does not exist |
+| Symlink to host file | Resolves inside container |
+
+### 9.2 API Security
+
+| Check | Result |
+|-------|--------|
+| Protected endpoints without token | 401 |
+| Malformed / garbage tokens | 401 |
+| `alg:none` JWT downgrade | 401 |
+| Reading another user's submission | 403 |
+| Submission list scoped to owner | Confirmed |
+| Source over 256 KB | 413 |
+| Blank source / invalid language | 400 |
+| Password in any response body | Absent |
+| Passwords stored as BCrypt | Confirmed (`$2...`) |
+| Secrets committed to git | None |
+
+---
+
+## 10. Issues Found and Fixed During the Audit
+
+1. **Large submissions failed silently (availability).** Source above roughly
+   90 KB could not be written into the container: base64 inflates the payload by
+   a third and the resulting exec command exceeded the shell argument limit,
+   failing with exit 255 and surfacing as a misleading `RUNTIME_ERROR`. Since the
+   platform accepts up to 256 KB, the write is now chunked across multiple small
+   execs. Verified: submissions of 14 KB to 215 KB now succeed.
+2. **Stale per-submission results.** The judge saved `SubmissionTestResult` rows
+   directly, leaving the `Submission.testResults` collection stale inside the
+   same persistence context, so the detail endpoint could return an empty test
+   list. The endpoint now reads through the repository.
+
+## 11. Known Residual Risks
+
+- **No rate limiting.** Login and submission endpoints are unthrottled, so an
+  attacker could brute-force credentials or flood the judge. This is the most
+  significant remaining gap.
+- **Peak memory includes compilation.** Reported memory is the container's cgroup
+  peak, which includes toolchain startup, so it overstates a submission's usage.
+- **OOM detection is a stderr heuristic.** A program printing `OutOfMemoryError`
+  while exiting non-zero would be misclassified as `MEMORY_LIMIT_EXCEEDED`.
+- **Judging is synchronous**, so a submission holds a request thread for the
+  full compile and run duration.
+- **Sandbox isolation is Docker-on-Linux semantics.** Under Docker Desktop the
+  boundary sits at the Linux VM layer rather than the bare-metal kernel.
