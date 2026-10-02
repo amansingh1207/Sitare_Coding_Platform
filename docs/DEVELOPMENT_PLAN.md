@@ -40,109 +40,109 @@ This plan breaks the project into small, independently testable phases. Each pha
 
 ## Phase 1 — Project Bootstrap
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02)
 
 **Goal:** Set up the basic project structure and verify everything starts.
 
 **Deliverables:**
-- [ ] React + TypeScript + Vite frontend scaffold
-- [ ] Spring Boot 3 + Java 17 backend scaffold
-- [ ] PostgreSQL 16 running via Docker Compose
-- [ ] Docker development environment configured
-- [ ] Basic health check endpoint
+- [x] React + TypeScript + Vite frontend scaffold
+- [x] Spring Boot 3 + Java 17 backend scaffold
+- [x] PostgreSQL 16 running via Docker Compose
+- [x] Docker development environment configured
+- [x] Basic health check endpoint
 
 **Acceptance Criteria:**
-- [ ] Frontend dev server starts on port 3000
-- [ ] Backend starts on port 8080
-- [ ] PostgreSQL is accessible
-- [ ] Health check returns 200
+- [x] Frontend dev server starts on port 3000
+- [x] Backend starts on port 8080
+- [x] PostgreSQL is accessible
+- [x] Health check returns 200
 
 ---
 
 ## Phase 2 — Database
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02)
 
 **Goal:** Implement the database schema with migrations.
 
 **Deliverables:**
-- [ ] Flyway migrations for all tables
-- [ ] JPA entities: User, Problem, TestCase, Submission, SubmissionTestResult
-- [ ] Spring Data JPA repositories
-- [ ] Database integration tests
+- [x] Flyway migrations for all tables
+- [x] JPA entities: User, Problem, TestCase, Submission, SubmissionTestResult
+- [x] Spring Data JPA repositories
+- [x] Database integration tests
 
 **Acceptance Criteria:**
-- [ ] All migrations run successfully
-- [ ] Entities map correctly to tables
-- [ ] Repositories pass integration tests
-- [ ] Foreign key constraints work correctly
+- [x] All migrations run successfully
+- [x] Entities map correctly to tables
+- [x] Repositories pass integration tests
+- [x] Foreign key constraints work correctly
 
 ---
 
 ## Phase 3 — Authentication
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02)
 
 **Goal:** Implement login, register, and current-user endpoints.
 
 **Deliverables:**
-- [ ] JWT token provider
-- [ ] Spring Security configuration
-- [ ] Auth controller (register, login, me)
-- [ ] Password hashing with BCrypt
-- [ ] Auth integration tests
+- [x] JWT token provider
+- [x] Spring Security configuration
+- [x] Auth controller (register, login, me)
+- [x] Password hashing with BCrypt
+- [x] Auth integration tests
 
 **Acceptance Criteria:**
-- [ ] User can register
-- [ ] User can log in and receive JWT
-- [ ] Protected endpoints reject unauthenticated requests
-- [ ] Users cannot access other users' data
-- [ ] Passwords are never stored in plaintext
+- [x] User can register
+- [x] User can log in and receive JWT
+- [x] Protected endpoints reject unauthenticated requests
+- [x] Users cannot access other users' data
+- [x] Passwords are never stored in plaintext
 
 ---
 
 ## Phase 4 — Problem Browsing
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02)
 
 **Goal:** Implement problem list and problem detail endpoints.
 
 **Deliverables:**
-- [ ] Problem controller (list, get by slug)
-- [ ] Problem service with search and filter
-- [ ] Sample test case retrieval
-- [ ] Problem browsing integration tests
+- [x] Problem controller (list, get by slug)
+- [x] Problem service with search and filter
+- [x] Sample test case retrieval
+- [x] Problem browsing integration tests
 
 **Acceptance Criteria:**
-- [ ] Students can list problems
-- [ ] Students can search problems
-- [ ] Students can filter by week/difficulty
-- [ ] Students can view problem details
-- [ ] Students can see sample test cases
-- [ ] Hidden test cases are never exposed
+- [x] Students can list problems
+- [x] Students can search problems
+- [x] Students can filter by week/difficulty
+- [x] Students can view problem details
+- [x] Students can see sample test cases
+- [x] Hidden test cases are never exposed
 
 ---
 
 ## Phase 5 — Code Editor
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02) — frontend implemented and unit-tested; live Run/Submit flows activate with Phase 6/7 backend
 
 **Goal:** Build the online code editor frontend.
 
 **Deliverables:**
-- [ ] Code editor component with syntax highlighting
-- [ ] Language selector (Java, C++, Python)
-- [ ] Starter code templates
-- [ ] Run Code button
-- [ ] Submit Code button
-- [ ] Test case result display
+- [x] Code editor component with syntax highlighting
+- [x] Language selector (Java, C++, Python)
+- [x] Starter code templates
+- [x] Run Code button
+- [x] Submit Code button
+- [x] Test case result display
 
 **Acceptance Criteria:**
-- [ ] Editor supports Java, C++, Python
-- [ ] Syntax highlighting works
-- [ ] Language selector switches templates
-- [ ] Run Code shows results
-- [ ] Submit Code shows submission status
+- [x] Editor supports Java, C++, Python
+- [x] Syntax highlighting works
+- [x] Language selector switches templates
+- [x] Run Code shows results
+- [x] Submit Code shows submission status
 
 ---
 
