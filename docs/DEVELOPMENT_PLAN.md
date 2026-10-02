@@ -125,7 +125,7 @@ This plan breaks the project into small, independently testable phases. Each pha
 
 ## Phase 5 — Code Editor
 
-**Status:** Complete (2026-10-02) — frontend implemented and unit-tested; live Run/Submit flows activate with Phase 6/7 backend
+**Status:** Complete (2026-10-02) — Run and Submit both live-verified once the Phase 6/7 backend landed
 
 **Goal:** Build the online code editor frontend.
 
@@ -169,7 +169,7 @@ This plan breaks the project into small, independently testable phases. Each pha
 
 ## Phase 7 — Judge Engine (Java)
 
-**Status:** In Progress (core complete, integration tests blocked by test environment)
+**Status:** Complete (2026-10-02) — core landed in Phase 7 and was live-verified against a real Docker daemon in Phase 10
 
 **Core Deliverables Complete:**
 - DockerSandbox with resource limits (CPU, memory, pids, readonly fs, no network)
