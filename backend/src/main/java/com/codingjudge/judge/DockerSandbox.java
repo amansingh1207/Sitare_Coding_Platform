@@ -168,9 +168,14 @@ public class DockerSandbox {
     }
 
     private String createContainer() {
+        long memoryBytes = (long) defaultMemoryLimitMb * 1024L * 1024L;
         HostConfig hostConfig = HostConfig.newHostConfig()
                 .withNetworkMode("none")
-                .withMemory((long) defaultMemoryLimitMb * 1024L * 1024L)
+                .withMemory(memoryBytes)
+                // Equal memory and memory-swap disables swap for the container.
+                // Docker defaults swap to 2x the memory limit, which lets a
+                // submission exceed its RAM budget before being OOM killed.
+                .withMemorySwap(memoryBytes)
                 .withCpuCount((long) (defaultCpuLimit * 1000000000L)) // nanoCPUs
                 .withPidsLimit(64L)
                 .withReadonlyRootfs(true)

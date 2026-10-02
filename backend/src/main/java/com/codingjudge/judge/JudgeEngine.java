@@ -117,6 +117,10 @@ public class JudgeEngine {
         if (result.isOomKilled()) {
             return SubmissionStatus.MEMORY_LIMIT_EXCEEDED;
         }
+        // 128 + SIGKILL(9) is how the OOM killer terminates the process.
+        if (result.exitCode() == 137) {
+            return SubmissionStatus.MEMORY_LIMIT_EXCEEDED;
+        }
         if (result.exitCode() != 0) {
             return SubmissionStatus.RUNTIME_ERROR;
         }

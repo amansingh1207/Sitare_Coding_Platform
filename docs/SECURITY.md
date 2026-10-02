@@ -55,6 +55,40 @@ Student code runs inside Docker containers with the following restrictions:
 - Access the database
 - Access other containers
 
+### 3.3 Verified Sandbox Boundaries
+
+These were verified empirically against `codingjudge/sandbox:latest`
+(image built from `docker/sandbox/Dockerfile`), not merely asserted:
+
+| Boundary | Verification | Result |
+|----------|--------------|--------|
+| No network | `getent hosts google.com` inside container | Blocked, no DNS resolution |
+| Read-only root filesystem | `touch /escape.txt` | `Read-only file system` |
+| Writable scratch space | `touch /tmp/ok` | Succeeds |
+| No application secrets | `env` inside container | Only base-image defaults, no app config |
+| Process limit | 500 concurrent `fork()` calls | Blocked at 63 processes (`pids-limit 64`) |
+| Memory limit | Allocate and touch 400 MB | Killed (exit 137) when swap disabled |
+| Toolchain presence | `java -version`, `g++ --version`, `python3 --version` | Java 17, g++ 11.4, Python 3.10 |
+| Unprivileged execution | `id -u` | 1000 (non-root) |
+
+**Swap must be disabled.** Docker defaults `--memory-swap` to twice the memory
+limit. With the default, a 400 MB allocation survives a 256 MB limit because
+pages spill to swap. The judge therefore sets memory and memory-swap to the same
+value. Verified: default swap survives, disabled swap yields exit 137.
+
+**Exit code 137 means MEMORY_LIMIT_EXCEEDED**, not a runtime error. The judge
+maps 128 + SIGKILL(9) to `MEMORY_LIMIT_EXCEEDED`.
+
+### 3.4 Known Limits of This Boundary
+
+- The sandbox image ships a full JDK, g++ and Python; a determined student may
+  spend CPU on compilation, which the compile timeout bounds but does not cap.
+- `--memory-swap` equality disables swap for the container. On a host under
+  memory pressure this makes submissions OOM-kill sooner, which is intentional.
+- Isolation is Docker-on-Linux semantics. Docker Desktop (Windows/macOS) runs the
+  daemon inside a Linux VM, so these boundaries hold at the VM layer rather than
+  the bare-metal kernel.
+
 ### 3.3 What Student Code CAN Do
 
 - Read its own source code
