@@ -39,6 +39,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/health").permitAll()
                 .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+                .requestMatchers("/api/admin/**").hasRole("PROFESSOR")
                 .anyRequest().authenticated()
             )
             .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) -> {

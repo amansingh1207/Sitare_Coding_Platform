@@ -15,6 +15,8 @@ public interface ProblemRepository extends JpaRepository<Problem, Long> {
 
     Optional<Problem> findBySlug(String slug);
 
+    boolean existsBySlug(String slug);
+
     List<Problem> findByWeekLabel(String weekLabel);
 
     List<Problem> findByDifficulty(Difficulty difficulty);
