@@ -10,6 +10,7 @@ public class RunTestResultResponse {
 
     private Long testCaseId;
     private String status;
+    private String inputData;
     private String actualOutput;
     private String expectedOutput;
     private Integer runtimeMs;
@@ -29,6 +30,14 @@ public class RunTestResultResponse {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getInputData() {
+        return inputData;
+    }
+
+    public void setInputData(String inputData) {
+        this.inputData = inputData;
     }
 
     public String getActualOutput() {

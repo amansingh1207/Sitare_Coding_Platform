@@ -131,27 +131,77 @@ public class DockerSandbox {
     public ExecutionResult execute(String sourceCode, String input,
                                    LanguageExecutor executor,
                                    long timeoutMs, int memoryLimitMb) {
+        List<ExecutionResult> results = executeBatch(
+                sourceCode,
+                input == null ? List.of("") : List.of(input),
+                executor,
+                timeoutMs,
+                memoryLimitMb);
+        return results.isEmpty()
+                ? ExecutionResult.error("Execution failed: no result produced", -1)
+                : results.get(0);
+    }
+
+    /**
+     * Executes the same source against many inputs inside ONE container.
+     *
+     * The old path created, compiled in and destroyed a container per test
+     * case, so a submission with N tests paid N container lifecycles and N
+     * compilations. This runs create + copy + compile exactly once and then
+     * only rewrites the input file and re-runs the program per test, which is
+     * what makes multi-test submissions finish in seconds instead of minutes.
+     * Each program run is still a fresh process with its own time limit.
+     */
+    public List<ExecutionResult> executeBatch(String sourceCode, List<String> inputs,
+                                             LanguageExecutor executor,
+                                             long timeoutMs, int memoryLimitMb) {
         if (dockerClient == null) {
             LOG.error("Docker client is not configured; cannot execute submission code");
-            return ExecutionResult.error("Docker not available in test environment", -1);
+            List<ExecutionResult> errors = new ArrayList<>(inputs.size());
+            for (int i = 0; i < inputs.size(); i++) {
+                errors.add(ExecutionResult.error("Docker not available in test environment", -1));
+            }
+            return errors;
         }
         String containerId = null;
         try {
             containerId = createContainer();
             copySourceToContainer(containerId, sourceCode, executor);
 
-            // Compile in the SAME container that will run the program.
+            // Compile once in the SAME container that will run the program.
             // Interpreted languages skip this step entirely.
             if (executor.requiresCompilation()) {
                 CompilationResult compileResult = compileInContainer(containerId, executor);
                 if (!compileResult.success()) {
                     LOG.warn("Compilation failed: exitCode={} output={}",
                             compileResult.exitCode(), truncateForLog(compileResult.output()));
-                    return ExecutionResult.compilationError(
+                    ExecutionResult failure = ExecutionResult.compilationError(
                             compileResult.output(), compileResult.exitCode());
+                    return Collections.nCopies(inputs.size(), failure);
                 }
             }
 
+            List<ExecutionResult> results = new ArrayList<>(inputs.size());
+            for (String input : inputs) {
+                results.add(runInContainer(containerId, input, executor, timeoutMs));
+            }
+            return results;
+
+        } catch (Exception e) {
+            LOG.warn("Sandbox execution error", e);
+            return Collections.nCopies(inputs.size(),
+                    ExecutionResult.error("Execution failed: " + e.getMessage(), -1));
+        } finally {
+            if (containerId != null) {
+                cleanupContainer(containerId);
+            }
+        }
+    }
+
+    /** Runs the already-compiled program once against a single input. */
+    private ExecutionResult runInContainer(String containerId, String input,
+                                          LanguageExecutor executor, long timeoutMs) {
+        try {
             // Feed stdin from a file rather than piping it: exec stdin via
             // docker-java's async exec ends with "The pipe has been ended".
             writeInputFile(containerId, input);
@@ -189,7 +239,7 @@ public class DockerSandbox {
 
             if (!completed) {
                 // Execution outran the time limit. The container is killed and
-                // removed in the finally block, which also reaps the process.
+                // removed by the batch's finally block, which also reaps the process.
                 LOG.warn("Sandbox execution exceeded {} ms", timeoutMs);
                 return ExecutionResult.timeout();
             }
@@ -217,10 +267,6 @@ public class DockerSandbox {
         } catch (Exception e) {
             LOG.warn("Sandbox execution error", e);
             return ExecutionResult.error("Execution failed: " + e.getMessage(), -1);
-        } finally {
-            if (containerId != null) {
-                cleanupContainer(containerId);
-            }
         }
     }
 

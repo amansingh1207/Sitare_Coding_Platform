@@ -25,6 +25,7 @@ public class RunResultResponse {
                     RunTestResultResponse result = new RunTestResultResponse();
                     result.setTestCaseId(outcome.testCase().getId());
                     result.setStatus(outcome.status().name());
+                    result.setInputData(outcome.testCase().getInputData());
                     result.setActualOutput(outcome.actualOutput());
                     result.setExpectedOutput(outcome.testCase().getExpectedOutput());
                     result.setRuntimeMs((int) Math.min(outcome.runtimeMs(), Integer.MAX_VALUE));

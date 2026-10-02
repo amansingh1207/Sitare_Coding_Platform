@@ -6,6 +6,7 @@ public class SubmissionTestResultResponse {
 
     private Long testCaseId;
     private String status;
+    private String inputData;
     private String actualOutput;
     private Integer runtimeMs;
     private Integer memoryUsedKb;
@@ -14,6 +15,7 @@ public class SubmissionTestResultResponse {
         SubmissionTestResultResponse response = new SubmissionTestResultResponse();
         response.testCaseId = result.getTestCase().getId();
         response.status = result.getStatus().name();
+        response.inputData = result.getTestCase().getInputData();
         response.actualOutput = result.getActualOutput();
         response.runtimeMs = result.getRuntimeMs();
         response.memoryUsedKb = result.getMemoryUsedKb();
@@ -26,6 +28,10 @@ public class SubmissionTestResultResponse {
 
     public String getStatus() {
         return status;
+    }
+
+    public String getInputData() {
+        return inputData;
     }
 
     public String getActualOutput() {

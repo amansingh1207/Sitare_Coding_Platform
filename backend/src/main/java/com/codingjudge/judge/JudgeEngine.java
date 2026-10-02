@@ -100,6 +100,24 @@ public class JudgeEngine {
                 problem.getMemoryLimitMb());
     }
 
+    /**
+     * Runs code against one custom stdin without comparing to any expected
+     * output and without persisting anything. Used by the editor's
+     * "custom input" feature for students, professors and admins alike.
+     */
+    public ExecutionResult runCustomInput(Problem problem, String sourceCode,
+                                          Language language, String stdin) {
+        List<ExecutionResult> results = sandbox.executeBatch(
+                sourceCode,
+                stdin == null ? List.of("") : List.of(stdin),
+                getExecutor(language),
+                problem.getTimeLimitMs(),
+                problem.getMemoryLimitMb());
+        return results.isEmpty()
+                ? ExecutionResult.error("Execution failed: no result produced", -1)
+                : results.get(0);
+    }
+
     /** Executes the source once per test case and folds the results into a verdict. */
     private TestRunSummary executeAgainst(List<TestCase> testCases,
                                           String sourceCode,
@@ -112,13 +130,14 @@ public class JudgeEngine {
         long maxMemoryKb = 0;
         List<TestOutcome> outcomes = new ArrayList<>(testCases.size());
 
-        for (TestCase testCase : testCases) {
-            ExecutionResult execResult = sandbox.execute(
-                    sourceCode,
-                    testCase.getInputData(),
-                    executor,
-                    timeoutMs,
-                    memoryLimitMb);
+        // One container, one compilation for the whole batch (see DockerSandbox).
+        List<String> inputs = testCases.stream().map(TestCase::getInputData).toList();
+        List<ExecutionResult> execResults = sandbox.executeBatch(
+                sourceCode, inputs, executor, timeoutMs, memoryLimitMb);
+
+        for (int i = 0; i < testCases.size(); i++) {
+            TestCase testCase = testCases.get(i);
+            ExecutionResult execResult = execResults.get(i);
 
             SubmissionStatus testStatus = determineTestStatus(execResult, testCase.getExpectedOutput());
             outcomes.add(new TestOutcome(
@@ -137,6 +156,13 @@ public class JudgeEngine {
                 allAccepted = false;
                 // Keep the most specific failure reason (docs/JUDGE_DESIGN.md section 9).
                 verdict = worseOf(verdict, testStatus);
+            }
+
+            // A compilation failure poisons every test identically: the binary
+            // was never produced, so running the remaining inputs can only
+            // repeat the same verdict while burning container time.
+            if (testStatus == SubmissionStatus.COMPILATION_ERROR) {
+                break;
             }
         }
 
@@ -202,7 +228,12 @@ public class JudgeEngine {
         };
     }
     
-    private SubmissionStatus determineTestStatus(ExecutionResult result, String expectedOutput) {
+    /**
+     * Status of a raw execution with no expected output to compare against,
+     * e.g. a custom-input run. A clean exit counts as ACCEPTED: the program
+     * ran, and what it printed is shown to the user verbatim.
+     */
+    public SubmissionStatus executionStatus(ExecutionResult result) {
         if (result.isCompilationError()) {
             return SubmissionStatus.COMPILATION_ERROR;
         }
@@ -219,7 +250,14 @@ public class JudgeEngine {
         if (result.exitCode() != 0) {
             return SubmissionStatus.RUNTIME_ERROR;
         }
-        
+        return SubmissionStatus.ACCEPTED;
+    }
+
+    private SubmissionStatus determineTestStatus(ExecutionResult result, String expectedOutput) {
+        SubmissionStatus execution = executionStatus(result);
+        if (execution != SubmissionStatus.ACCEPTED) {
+            return execution;
+        }
         if (comparator.compare(expectedOutput, result.output())) {
             return SubmissionStatus.ACCEPTED;
         }

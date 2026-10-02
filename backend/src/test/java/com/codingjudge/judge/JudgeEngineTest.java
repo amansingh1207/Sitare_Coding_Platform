@@ -16,6 +16,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -69,9 +71,10 @@ class JudgeEngineTest {
 
     @Test
     void judge_allTestsPass_returnsAccepted() {
-        when(sandbox.execute(anyString(), anyString(), any(), anyLong(), anyInt()))
-                .thenReturn(ExecutionResult.success("expected output", 100, 10240))
-                .thenReturn(ExecutionResult.success("hidden output", 100, 10240));
+        when(sandbox.executeBatch(anyString(), anyList(), any(), anyLong(), anyInt()))
+                .thenReturn(List.of(
+                        ExecutionResult.success("expected output", 100, 10240),
+                        ExecutionResult.success("hidden output", 100, 10240)));
         when(comparator.compare("expected output", "expected output")).thenReturn(true);
         when(comparator.compare("hidden output", "hidden output")).thenReturn(true);
 
@@ -83,9 +86,10 @@ class JudgeEngineTest {
 
     @Test
     void judge_oneTestFails_returnsWrongAnswer() {
-        when(sandbox.execute(anyString(), anyString(), any(), anyLong(), anyInt()))
-                .thenReturn(ExecutionResult.success("expected output", 100, 10240))
-                .thenReturn(ExecutionResult.success("wrong output", 100, 10240));
+        when(sandbox.executeBatch(anyString(), anyList(), any(), anyLong(), anyInt()))
+                .thenReturn(List.of(
+                        ExecutionResult.success("expected output", 100, 10240),
+                        ExecutionResult.success("wrong output", 100, 10240)));
         when(comparator.compare("expected output", "expected output")).thenReturn(true);
         when(comparator.compare("hidden output", "wrong output")).thenReturn(false);
 
@@ -96,8 +100,10 @@ class JudgeEngineTest {
 
     @Test
     void judge_withCompilationError_returnsCompilationError() {
-        when(sandbox.execute(anyString(), anyString(), any(), anyLong(), anyInt()))
-                .thenReturn(ExecutionResult.compilationError("Compilation failed: class not found", 1));
+        when(sandbox.executeBatch(anyString(), anyList(), any(), anyLong(), anyInt()))
+                .thenReturn(List.of(
+                        ExecutionResult.compilationError("Compilation failed: class not found", 1),
+                        ExecutionResult.compilationError("Compilation failed: class not found", 1)));
 
         Submission result = judgeEngine.judge(submission);
 
@@ -105,9 +111,25 @@ class JudgeEngineTest {
     }
 
     @Test
+    void judge_withCompilationError_stopsAfterFirstTest() {
+        when(sandbox.executeBatch(anyString(), anyList(), any(), anyLong(), anyInt()))
+                .thenReturn(List.of(
+                        ExecutionResult.compilationError("Compilation failed: class not found", 1),
+                        ExecutionResult.compilationError("Compilation failed: class not found", 1)));
+
+        Submission result = judgeEngine.judge(submission);
+
+        assertThat(result.getStatus()).isEqualTo(SubmissionStatus.COMPILATION_ERROR);
+        // Only the first failing test is recorded; the rest are skipped.
+        verify(testResultRepository, times(1)).save(any(SubmissionTestResult.class));
+    }
+
+    @Test
     void judge_withRuntimeError_returnsRuntimeError() {
-        when(sandbox.execute(anyString(), anyString(), any(), anyLong(), anyInt()))
-                .thenReturn(ExecutionResult.error("NullPointerException", -1));
+        when(sandbox.executeBatch(anyString(), anyList(), any(), anyLong(), anyInt()))
+                .thenReturn(List.of(
+                        ExecutionResult.error("NullPointerException", -1),
+                        ExecutionResult.error("NullPointerException", -1)));
 
         Submission result = judgeEngine.judge(submission);
 
@@ -116,8 +138,10 @@ class JudgeEngineTest {
 
     @Test
     void judge_withTimeout_returnsTimeLimitExceeded() {
-        when(sandbox.execute(anyString(), anyString(), any(), anyLong(), anyInt()))
-                .thenReturn(ExecutionResult.timeout());
+        when(sandbox.executeBatch(anyString(), anyList(), any(), anyLong(), anyInt()))
+                .thenReturn(List.of(
+                        ExecutionResult.timeout(),
+                        ExecutionResult.timeout()));
 
         Submission result = judgeEngine.judge(submission);
 
@@ -126,8 +150,10 @@ class JudgeEngineTest {
 
     @Test
     void judge_withOomKilled_returnsMemoryLimitExceeded() {
-        when(sandbox.execute(anyString(), anyString(), any(), anyLong(), anyInt()))
-                .thenReturn(ExecutionResult.oomKilledResult());
+        when(sandbox.executeBatch(anyString(), anyList(), any(), anyLong(), anyInt()))
+                .thenReturn(List.of(
+                        ExecutionResult.oomKilledResult(),
+                        ExecutionResult.oomKilledResult()));
 
         Submission result = judgeEngine.judge(submission);
 
@@ -144,10 +170,11 @@ class JudgeEngineTest {
         sample2.setSortOrder(2);
         problem.addTestCase(sample2);
 
-        when(sandbox.execute(anyString(), anyString(), any(), anyLong(), anyInt()))
-                .thenReturn(ExecutionResult.success("expected output", 100, 10240))
-                .thenReturn(ExecutionResult.success("hidden output", 100, 10240))
-                .thenReturn(ExecutionResult.success("output2", 100, 10240));
+        when(sandbox.executeBatch(anyString(), anyList(), any(), anyLong(), anyInt()))
+                .thenReturn(List.of(
+                        ExecutionResult.success("expected output", 100, 10240),
+                        ExecutionResult.success("hidden output", 100, 10240),
+                        ExecutionResult.success("output2", 100, 10240)));
         when(comparator.compare("expected output", "expected output")).thenReturn(true);
         when(comparator.compare("hidden output", "hidden output")).thenReturn(true);
         when(comparator.compare("output2", "output2")).thenReturn(true);
@@ -159,12 +186,26 @@ class JudgeEngineTest {
     }
 
     @Test
+    void runCustomInput_returnsFirstBatchResult() {
+        when(sandbox.executeBatch(anyString(), anyList(), any(), anyLong(), anyInt()))
+                .thenReturn(List.of(ExecutionResult.success("custom out", 50, 5120)));
+
+        ExecutionResult result =
+                judgeEngine.runCustomInput(problem, "public class Main {}", Language.JAVA, "1 2");
+
+        assertThat(result.output()).isEqualTo("custom out");
+        assertThat(judgeEngine.executionStatus(result)).isEqualTo(SubmissionStatus.ACCEPTED);
+    }
+
+    @Test
     void judge_repeatedSubmissions_work() {
-        when(sandbox.execute(anyString(), anyString(), any(), anyLong(), anyInt()))
-                .thenReturn(ExecutionResult.success("expected output", 100, 10240))
-                .thenReturn(ExecutionResult.success("hidden output", 100, 10240))
-                .thenReturn(ExecutionResult.success("expected output", 100, 10240))
-                .thenReturn(ExecutionResult.success("hidden output", 100, 10240));
+        when(sandbox.executeBatch(anyString(), anyList(), any(), anyLong(), anyInt()))
+                .thenReturn(List.of(
+                        ExecutionResult.success("expected output", 100, 10240),
+                        ExecutionResult.success("hidden output", 100, 10240)))
+                .thenReturn(List.of(
+                        ExecutionResult.success("expected output", 100, 10240),
+                        ExecutionResult.success("hidden output", 100, 10240)));
         when(comparator.compare("expected output", "expected output")).thenReturn(true);
         when(comparator.compare("hidden output", "hidden output")).thenReturn(true);
 
@@ -173,6 +214,6 @@ class JudgeEngineTest {
 
         assertThat(result1.getStatus()).isEqualTo(SubmissionStatus.ACCEPTED);
         assertThat(result2.getStatus()).isEqualTo(SubmissionStatus.ACCEPTED);
-        verify(sandbox, times(4)).execute(anyString(), anyString(), any(), anyLong(), anyInt());
+        verify(sandbox, times(2)).executeBatch(anyString(), anyList(), any(), anyLong(), anyInt());
     }
 }

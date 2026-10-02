@@ -3,8 +3,11 @@ package com.codingjudge.service;
 import com.codingjudge.exception.ForbiddenException;
 import com.codingjudge.exception.PayloadTooLargeException;
 import com.codingjudge.exception.ResourceNotFoundException;
+import com.codingjudge.judge.ExecutionResult;
 import com.codingjudge.judge.JudgeEngine;
+import com.codingjudge.model.dto.request.CustomRunRequest;
 import com.codingjudge.model.dto.request.SubmitRequest;
+import com.codingjudge.model.dto.response.CustomRunResponse;
 import com.codingjudge.model.dto.response.RunResultResponse;
 import com.codingjudge.model.dto.response.SubmissionDetailResponse;
 import com.codingjudge.model.dto.response.SubmissionRefResponse;
@@ -94,6 +97,27 @@ public class SubmissionService {
 
         return RunResultResponse.from(
                 judgeEngine.runSamples(problem, request.getSourceCode(), language));
+    }
+
+    /**
+     * Runs code against a caller-supplied stdin without recording a submission.
+     *
+     * Nothing is persisted and no test case data is involved, so there is
+     * nothing hidden to leak; any authenticated user may use it.
+     */
+    @Transactional(readOnly = true)
+    public CustomRunResponse runCustom(String email, CustomRunRequest request) {
+        requireUser(email);
+        Problem problem = problemRepository.findById(request.getProblemId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Problem not found: " + request.getProblemId()));
+        Language language = parseLanguage(request.getLanguage());
+        requireSourceSize(request.getSourceCode());
+
+        ExecutionResult result = judgeEngine.runCustomInput(
+                problem, request.getSourceCode(), language,
+                request.getStdin() == null ? "" : request.getStdin());
+        return CustomRunResponse.from(result, judgeEngine.executionStatus(result));
     }
 
     @Transactional(readOnly = true)

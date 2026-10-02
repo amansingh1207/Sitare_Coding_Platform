@@ -5,6 +5,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Configuration
 @Profile("test")
 public class TestJudgeConfig {
@@ -25,6 +28,17 @@ public class TestJudgeConfig {
             @Override
             public CompilationResult compile(String sourceCode, LanguageExecutor executor) {
                 return CompilationResult.success("");
+            }
+
+            @Override
+            public List<ExecutionResult> executeBatch(String sourceCode, List<String> inputs,
+                                                      LanguageExecutor executor,
+                                                      long timeoutMs, int memoryLimitMb) {
+                List<ExecutionResult> results = new ArrayList<>(inputs.size());
+                for (String input : inputs) {
+                    results.add(execute(sourceCode, input, executor, timeoutMs, memoryLimitMb));
+                }
+                return results;
             }
 
             @Override

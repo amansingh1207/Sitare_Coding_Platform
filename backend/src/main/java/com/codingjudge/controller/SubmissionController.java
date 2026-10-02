@@ -1,7 +1,9 @@
 package com.codingjudge.controller;
 
 import com.codingjudge.model.dto.ApiResponse;
+import com.codingjudge.model.dto.request.CustomRunRequest;
 import com.codingjudge.model.dto.request.SubmitRequest;
+import com.codingjudge.model.dto.response.CustomRunResponse;
 import com.codingjudge.model.dto.response.RunResultResponse;
 import com.codingjudge.model.dto.response.SubmissionDetailResponse;
 import com.codingjudge.model.dto.response.SubmissionRefResponse;
@@ -52,6 +54,14 @@ public class SubmissionController {
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody SubmitRequest request) {
         RunResultResponse result = submissionService.run(userDetails.getUsername(), request);
+        return ResponseEntity.ok(ApiResponse.ok(result));
+    }
+
+    @PostMapping("/run-custom")
+    public ResponseEntity<ApiResponse<CustomRunResponse>> runCustom(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody CustomRunRequest request) {
+        CustomRunResponse result = submissionService.runCustom(userDetails.getUsername(), request);
         return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
