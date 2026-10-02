@@ -169,7 +169,20 @@ This plan breaks the project into small, independently testable phases. Each pha
 
 ## Phase 7 — Judge Engine (Java)
 
-**Status:** Not Started
+**Status:** In Progress (core complete, integration tests blocked by test environment)
+
+**Core Deliverables Complete:**
+- DockerSandbox with resource limits (CPU, memory, pids, readonly fs, no network)
+- LanguageExecutor abstraction + JavaExecutor (javac/java)
+- OutputComparator with token-based comparison
+- JudgeEngine orchestrating compile → execute per test case → compare → persist
+- SubmissionService integration: judge() called on submit
+- TestJudgeConfig with mock DockerSandbox for test profile
+
+**Known Issues:**
+- Integration tests blocked by test environment (no Docker daemon, low memory causing VM crashes)
+- Repository tests pass (18/18)
+- Core judge engine compiles and is ready for live validation when Docker is available
 
 **Goal:** Implement Docker-based judge for Java.
 
