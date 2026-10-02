@@ -206,16 +206,21 @@ This plan breaks the project into small, independently testable phases. Each pha
 
 ## Phase 8 — C++ Support
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02)
 
 **Goal:** Add C++ execution through the language abstraction.
 
 **Deliverables:**
-- [ ] C++ executor
-- [ ] C++ judge tests
+- [x] C++ executor
+- [x] C++ judge tests
 
 **Acceptance Criteria:**
-- [ ] Correct C++ solution → ACCEPTED
+- [x] Correct C++ solution → ACCEPTED
+- [x] Incorrect C++ solution → WRONG_ANSWER
+- [x] Invalid C++ source → COMPILATION_ERROR
+- [x] C++ program crash → RUNTIME_ERROR
+- [x] C++ infinite loop → TIME_LIMIT_EXCEEDED
+- [x] C++ excessive memory → MEMORY_LIMIT_EXCEEDED
 - [ ] Incorrect C++ solution → WRONG_ANSWER
 - [ ] Invalid C++ source → COMPILATION_ERROR
 - [ ] C++ program crash → RUNTIME_ERROR
