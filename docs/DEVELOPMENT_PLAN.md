@@ -148,22 +148,22 @@ This plan breaks the project into small, independently testable phases. Each pha
 
 ## Phase 6 — Submission Pipeline
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02)
 
 **Goal:** Implement submission creation and persistence.
 
 **Deliverables:**
-- [ ] Submission controller (create, get, list)
-- [ ] Submission service
-- [ ] Submission persistence
-- [ ] Submission pipeline integration tests
+- [x] Submission controller (create, get, list)
+- [x] Submission service
+- [x] Submission persistence
+- [x] Submission pipeline integration tests
 
 **Acceptance Criteria:**
-- [ ] Students can submit code
-- [ ] Submissions are persisted
-- [ ] Students can view their submission history
-- [ ] Students can view submission details
-- [ ] Students cannot view others' submissions
+- [x] Students can submit code
+- [x] Submissions are persisted
+- [x] Students can view their submission history
+- [x] Students can view submission details
+- [x] Students cannot view others' submissions
 
 ---
 
