@@ -288,6 +288,43 @@ button:disabled {
   margin: 0;
 }
 
+.practice-timer {
+  border: 1px solid #d5e8d4;
+  background: #f4fbf3;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+}
+
+.practice-timer__display {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.practice-timer__label {
+  font-weight: 600;
+  color: #1e8449;
+}
+
+.practice-timer__value {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 1.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.practice-timer__controls {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.practice-timer__hint {
+  color: #6c7a6b;
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+}
+
 .code-viewer {
   border: 1px solid #ddd;
   border-radius: 4px;

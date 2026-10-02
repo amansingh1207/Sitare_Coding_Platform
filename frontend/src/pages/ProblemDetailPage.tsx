@@ -4,6 +4,7 @@ import { problemsApi } from '../api/problems';
 import { submissionsApi } from '../api/submissions';
 import { ApiError } from '../api/client';
 import { CodeEditor } from '../components/CodeEditor';
+import { PracticeTimer } from '../components/PracticeTimer';
 import { TestCaseResults, statusLabel } from '../components/TestCaseResults';
 import { SUPPORTED_LANGUAGES, getStarterCode, isSupportedLanguage } from '../utils/starterCode';
 import type { Language, ProblemDetail, RunResult, SubmissionDetail } from '../types';
@@ -171,6 +172,8 @@ export function ProblemDetailPage() {
         </div>
 
         <CodeEditor language={language} value={code} onChange={setCode} />
+
+        <PracticeTimer problemTitle={problem.title} />
 
         {runState.kind === 'error' && <p className="error">{runState.message}</p>}
         {runResult && (

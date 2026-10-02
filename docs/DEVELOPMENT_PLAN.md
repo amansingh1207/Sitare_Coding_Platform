@@ -302,20 +302,27 @@ This plan breaks the project into small, independently testable phases. Each pha
 
 ## Phase 12 — Practice Timer
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02)
 
 **Goal:** Implement optional practice timer.
 
 **Deliverables:**
-- [ ] Timer component
-- [ ] Start/pause/reset functionality
-- [ ] Timer persistence (optional)
+- [x] Timer component (HH:MM:SS display, start/pause/reset)
+- [x] Start/pause/reset functionality
+- [x] Timer persistence — intentionally omitted; timer resets on reload
 
 **Acceptance Criteria:**
-- [ ] Timer displays elapsed time (HH:MM:SS)
-- [ ] Students can start, pause, reset
-- [ ] Timer does not affect judging
-- [ ] Timer is optional
+- [x] Timer displays elapsed time (HH:MM:SS)
+- [x] Students can start, pause, reset
+- [x] Timer does not affect judging
+- [x] Timer is optional
+
+**Notes:**
+- The timer is entirely client-side and is never included in a submission
+  payload. `submissions.test.ts` asserts the request body contains exactly
+  `problemId`, `language` and `sourceCode`.
+- Practice time and the judge's execution time limit are unrelated concepts and
+  are never mixed. See `docs/PRODUCT_SPEC.md` section 9.
 
 ---
 

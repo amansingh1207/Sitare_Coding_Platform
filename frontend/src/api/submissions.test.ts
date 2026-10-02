@@ -54,4 +54,22 @@ describe('submissionsApi', () => {
     expect(result.status).toBe('ACCEPTED');
     expect(mock).toHaveBeenCalledTimes(3);
   });
+
+  it('never includes practice-timer data in the submission payload', async () => {
+    // The practice timer is a client-side study aid and must not influence
+    // judging. The request body is asserted exactly: only problemId, language
+    // and sourceCode may ever be sent.
+    const mock = mockFetchSequence([
+      { status: 'ACCEPTED', testResults: [], totalRuntimeMs: 1, totalMemoryUsedKb: 1 },
+    ]);
+    const payload = { problemId: 1, language: 'JAVA' as const, sourceCode: 'code' };
+
+    await submissionsApi.runCode(payload);
+
+    const body = JSON.parse(mock.mock.calls[0][1].body as string);
+    expect(Object.keys(body).sort()).toEqual(['language', 'problemId', 'sourceCode']);
+    expect(body).not.toHaveProperty('elapsedMs');
+    expect(body).not.toHaveProperty('practiceTime');
+    expect(body).not.toHaveProperty('timer');
+  });
 });
