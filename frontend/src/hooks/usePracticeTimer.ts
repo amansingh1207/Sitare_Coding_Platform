@@ -20,6 +20,13 @@ export function usePracticeTimer(): PracticeTimerState {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [running, setRunning] = useState(false);
   const startedAtRef = useRef<number | null>(null);
+  /**
+   * Time banked by earlier run segments.
+   *
+   * Resuming starts a fresh interval, so without accumulating here the span
+   * before the last pause would be dropped from the total.
+   */
+  const bankedMsRef = useRef(0);
 
   useEffect(() => {
     if (!running) {
@@ -27,7 +34,7 @@ export function usePracticeTimer(): PracticeTimerState {
     }
     const interval = window.setInterval(() => {
       if (startedAtRef.current !== null) {
-        setElapsedMs(Date.now() - startedAtRef.current);
+        setElapsedMs(bankedMsRef.current + (Date.now() - startedAtRef.current));
       }
     }, 1000);
     return () => window.clearInterval(interval);
@@ -45,7 +52,9 @@ export function usePracticeTimer(): PracticeTimerState {
   const pause = useCallback(() => {
     setRunning((wasRunning) => {
       if (wasRunning && startedAtRef.current !== null) {
-        setElapsedMs(Date.now() - startedAtRef.current);
+        const total = bankedMsRef.current + (Date.now() - startedAtRef.current);
+        bankedMsRef.current = total;
+        setElapsedMs(total);
         startedAtRef.current = null;
       }
       return false;
@@ -54,6 +63,7 @@ export function usePracticeTimer(): PracticeTimerState {
 
   const reset = useCallback(() => {
     startedAtRef.current = null;
+    bankedMsRef.current = 0;
     setRunning(false);
     setElapsedMs(0);
   }, []);

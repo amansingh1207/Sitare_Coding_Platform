@@ -189,6 +189,21 @@ behaves as designed.
 codebase passed every unit test and were only found by live submission; they are
 recorded in `docs/JUDGE_DESIGN.md` sections 11.6 and 11.7.
 
+Frontend tests run in Vitest. The default environment is `node`; files that need
+a DOM opt in per file with a `// @vitest-environment jsdom` docblock. Shared
+helpers live in `src/test/render.tsx`:
+
+- `renderWithRouter` wraps a component in `MemoryRouter`; pass `path` when the
+  component reads route params.
+- `renderAuthenticated` adds `AuthProvider` for pages that read auth state.
+- `ok` / `fail` build Response stand-ins carrying the backend's `ApiResponse`
+  envelope, so `parseEnvelope` runs its real success and error paths.
+
+Mock `fetch` rather than the API modules, so URL, method and request body are all
+asserted. `ProblemDetailPage.test.tsx` is the reference: it asserts the run call
+targets `/submissions/run` and not `/submissions`, which is the guard against the
+exact regression that once left the Run button returning 404.
+
 ---
 
 ## Forbidden Operations

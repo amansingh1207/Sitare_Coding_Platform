@@ -393,7 +393,7 @@ Both were invisible to unit tests and only surfaced by exercising the flow.
 - [x] Updated README (status, working build and test commands, judge flow)
 - [x] Updated technical docs (ARCHITECTURE, API_SPEC, DATABASE, JUDGE_DESIGN, SECURITY)
 - [x] Code cleanup (no TODO/FIXME/stub markers left in production source)
-- [x] Final validation (111 backend, 37 frontend, type-check and build clean)
+- [x] Final validation (111 backend, 82 frontend, type-check and build clean)
 
 **Acceptance Criteria:**
 - [x] All documentation is up to date
@@ -421,6 +421,37 @@ Both were invisible to unit tests and only surfaced by exercising the flow.
 **Standing guidance added:** judge changes must be verified against real Docker,
 not only the stubbed test suite. Several defects in this project passed every
 unit test and were found only by live submission.
+
+---
+
+## Post-Plan: Frontend UI Test Coverage
+
+All sixteen phases above were complete when a coverage gap was noticed: every one
+of the ten components and pages shipped without a single DOM-level test. The 37
+existing frontend tests covered only the API client and pure utilities, which is
+why the missing `/submissions/run` endpoint survived from Phase 5 until Phase 14.
+
+Added Testing Library and jsdom, plus DOM tests for the pages and components:
+
+| File | Tests | Covers |
+|------|-------|--------|
+| `pages/ProblemDetailPage.test.tsx` | 10 | Run vs Submit endpoints, verdict rendering, compiler diagnostics, language switching |
+| `pages/SubmissionHistoryPage.test.tsx` | 8 | Row rendering, status wording, pagination, load failure |
+| `pages/LoginPage.test.tsx` | 6 | Sign-in, token storage, error handling, retry |
+| `components/PracticeTimer.test.tsx` | 10 | Start, pause, resume, reset, unmount cleanup, formatting |
+| `components/TestCaseResults.test.tsx` | 11 | Status labels, output display, empty states |
+
+**Bug found and fixed:** the practice timer discarded all elapsed time when a
+student paused and resumed. `start` reset the baseline to the current instant
+without banking the previous span, so any session with a pause under-reported,
+and could report less time than the sum of its segments. It was introduced in
+Phase 12 and never exercised in a browser, so the whole phase passed its own
+acceptance criteria with the defect present. Fixed by accumulating banked time
+across segments in `usePracticeTimer`.
+
+The regression guard was mutation-checked: restoring the old `/submissions` URL
+for the run call fails two tests, and restoring the fixed timer fails the resume
+test.
 
 ---
 

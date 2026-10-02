@@ -252,7 +252,7 @@ timer.
 | Area | Coverage |
 |------|----------|
 | Backend tests | 111 passing |
-| Frontend tests | 37 passing |
+| Frontend tests | 82 passing (API client, utilities, and DOM-level component and page tests) |
 | Live judge verification | All 7 verdicts, all 3 languages |
 
 See [DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) for the per-phase record,
