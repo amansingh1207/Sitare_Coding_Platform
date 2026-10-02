@@ -2,6 +2,7 @@ package com.codingjudge.judge;
 
 import com.codingjudge.judge.executor.CppExecutor;
 import com.codingjudge.judge.executor.JavaExecutor;
+import com.codingjudge.judge.executor.PythonExecutor;
 import com.codingjudge.model.dto.response.SubmissionTestResultResponse;
 import com.codingjudge.model.entity.Submission;
 import com.codingjudge.model.entity.SubmissionTestResult;
@@ -22,17 +23,20 @@ public class JudgeEngine {
     private final SubmissionTestResultRepository testResultRepository;
     private final JavaExecutor javaExecutor;
     private final CppExecutor cppExecutor;
+    private final PythonExecutor pythonExecutor;
 
     public JudgeEngine(DockerSandbox sandbox,
                        OutputComparator comparator,
                        SubmissionTestResultRepository testResultRepository,
                        JavaExecutor javaExecutor,
-                       CppExecutor cppExecutor) {
+                       CppExecutor cppExecutor,
+                       PythonExecutor pythonExecutor) {
         this.sandbox = sandbox;
         this.comparator = comparator;
         this.testResultRepository = testResultRepository;
         this.javaExecutor = javaExecutor;
         this.cppExecutor = cppExecutor;
+        this.pythonExecutor = pythonExecutor;
     }
 
     public Submission judge(Submission submission) {
@@ -97,7 +101,7 @@ public class JudgeEngine {
         return switch (language) {
             case JAVA -> javaExecutor;
             case CPP -> cppExecutor;
-            case PYTHON -> throw new UnsupportedOperationException("Python not yet implemented");
+            case PYTHON -> pythonExecutor;
         };
     }
 }
