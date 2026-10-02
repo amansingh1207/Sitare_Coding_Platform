@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { problemsApi } from '../api/problems';
 import { submissionsApi } from '../api/submissions';
@@ -6,13 +6,75 @@ import { ApiError } from '../api/client';
 import { CodeEditor } from '../components/CodeEditor';
 import { PracticeTimer } from '../components/PracticeTimer';
 import { TestCaseResults, statusLabel } from '../components/TestCaseResults';
-import { SUPPORTED_LANGUAGES, getStarterCode, isSupportedLanguage } from '../utils/starterCode';
-import type { Language, ProblemDetail, RunResult, SubmissionDetail } from '../types';
+import {
+  SUPPORTED_LANGUAGES,
+  detectLanguageFromFileName,
+  getStarterCode,
+  isSupportedLanguage,
+} from '../utils/starterCode';
+import type {
+  CustomRunResult,
+  Language,
+  ProblemDetail,
+  RunResult,
+  SubmissionDetail,
+} from '../types';
 
 type ActionState =
   | { kind: 'idle' }
   | { kind: 'running' }
   | { kind: 'error'; message: string };
+
+type ConsoleTab = 'testcase' | 'result';
+
+/** Backend rejects sources larger than this; the editor refuses them up front. */
+const MAX_UPLOAD_BYTES = 256 * 1024;
+
+interface Draft {
+  language: Language;
+  code: string;
+}
+
+function draftKey(slug: string): string {
+  return `codingjudge_draft_${slug}`;
+}
+
+/** Reads a user-selected file, preferring Blob.text with a FileReader fallback. */
+function readFileText(file: File): Promise<string> {
+  if (typeof file.text === 'function') {
+    return file.text().catch(
+      () =>
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ''));
+          reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+          reader.readAsText(file);
+        }),
+    );
+  }
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+    reader.readAsText(file);
+  });
+}
+
+function loadDraft(slug: string): Draft | null {
+  try {
+    const raw = localStorage.getItem(draftKey(slug));
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<Draft>;
+    if (!isSupportedLanguage(parsed.language ?? '') || typeof parsed.code !== 'string') {
+      return null;
+    }
+    return { language: parsed.language as Language, code: parsed.code };
+  } catch {
+    return null;
+  }
+}
 
 export function ProblemDetailPage() {
   const { slug = '' } = useParams();
@@ -20,12 +82,21 @@ export function ProblemDetailPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [language, setLanguage] = useState<Language>('JAVA');
-  const [code, setCode] = useState(() => getStarterCode('JAVA'));
+  const [language, setLanguage] = useState<Language>(() => loadDraft(slug)?.language ?? 'JAVA');
+  const [code, setCode] = useState<string>(() => {
+    const draft = loadDraft(slug);
+    return draft?.code ?? getStarterCode(draft?.language ?? 'JAVA');
+  });
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [runState, setRunState] = useState<ActionState>({ kind: 'idle' });
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const [submitState, setSubmitState] = useState<ActionState>({ kind: 'idle' });
   const [submission, setSubmission] = useState<SubmissionDetail | null>(null);
+  const [customInput, setCustomInput] = useState('');
+  const [customResult, setCustomResult] = useState<CustomRunResult | null>(null);
+  const [customState, setCustomState] = useState<ActionState>({ kind: 'idle' });
+  const [consoleTab, setConsoleTab] = useState<ConsoleTab>('testcase');
 
   useEffect(() => {
     setLoading(true);
@@ -39,19 +110,80 @@ export function ProblemDetailPage() {
       .finally(() => setLoading(false));
   }, [slug]);
 
-  const handleLanguageChange = useCallback((value: string) => {
-    if (!isSupportedLanguage(value)) {
-      return;
-    }
-    setLanguage(value);
-    setCode(getStarterCode(value));
+  // Switching problems loads that problem's saved draft (or fresh starter
+  // code) instead of leaking the previous problem's code into the editor.
+  useEffect(() => {
+    const draft = loadDraft(slug);
+    const freshLanguage = draft?.language ?? 'JAVA';
+    setLanguage(freshLanguage);
+    setCode(draft?.code ?? getStarterCode(freshLanguage));
     setRunResult(null);
     setSubmission(null);
+    setCustomResult(null);
+    setRunState({ kind: 'idle' });
+    setSubmitState({ kind: 'idle' });
+    setCustomState({ kind: 'idle' });
+    setUploadError(null);
+  }, [slug]);
+
+  // Autosave the draft so a refresh never loses code.
+  useEffect(() => {
+    try {
+      localStorage.setItem(draftKey(slug), JSON.stringify({ language, code }));
+    } catch {
+      // Storage full or unavailable: drafting is best-effort only.
+    }
+  }, [slug, language, code]);
+
+  const clearResults = useCallback(() => {
+    setRunResult(null);
+    setSubmission(null);
+    setCustomResult(null);
+    setRunState({ kind: 'idle' });
+    setSubmitState({ kind: 'idle' });
+    setCustomState({ kind: 'idle' });
   }, []);
+
+  const handleLanguageChange = useCallback(
+    (value: string) => {
+      if (!isSupportedLanguage(value)) {
+        return;
+      }
+      setLanguage(value);
+      setCode(getStarterCode(value));
+      clearResults();
+    },
+    [clearResults],
+  );
 
   const handleReset = useCallback(() => {
     setCode(getStarterCode(language));
-  }, [language]);
+    clearResults();
+  }, [language, clearResults]);
+
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      setUploadError(null);
+      if (file.size > MAX_UPLOAD_BYTES) {
+        setUploadError(
+          `File is too large (${Math.round(file.size / 1024)} KB). Maximum is 256 KB.`,
+        );
+        return;
+      }
+      try {
+        const text = await readFileText(file);
+        const detected = detectLanguageFromFileName(file.name);
+        if (detected) {
+          setLanguage(detected);
+        }
+        setCode(text);
+        clearResults();
+      } catch {
+        setUploadError('Could not read the file. Please try again.');
+      }
+    },
+    [clearResults],
+  );
 
   const handleRun = useCallback(async () => {
     if (!problem) {
@@ -59,6 +191,7 @@ export function ProblemDetailPage() {
     }
     setRunState({ kind: 'running' });
     setRunResult(null);
+    setConsoleTab('result');
     try {
       const result = await submissionsApi.runCode({
         problemId: problem.id,
@@ -81,6 +214,7 @@ export function ProblemDetailPage() {
     }
     setSubmitState({ kind: 'running' });
     setSubmission(null);
+    setConsoleTab('result');
     try {
       const ref = await submissionsApi.submit({
         problemId: problem.id,
@@ -98,6 +232,29 @@ export function ProblemDetailPage() {
     }
   }, [problem, language, code]);
 
+  const handleCustomRun = useCallback(async () => {
+    if (!problem) {
+      return;
+    }
+    setCustomState({ kind: 'running' });
+    setCustomResult(null);
+    try {
+      const result = await submissionsApi.runCustomInput({
+        problemId: problem.id,
+        language,
+        sourceCode: code,
+        stdin: customInput,
+      });
+      setCustomResult(result);
+      setCustomState({ kind: 'idle' });
+    } catch (err) {
+      setCustomState({
+        kind: 'error',
+        message: err instanceof Error ? err.message : 'Custom run failed',
+      });
+    }
+  }, [problem, language, code, customInput]);
+
   if (loading) {
     return <p>Loading problem...</p>;
   }
@@ -105,47 +262,59 @@ export function ProblemDetailPage() {
     return <p className="error">{loadError ?? 'Problem not found.'}</p>;
   }
 
-  const busy = runState.kind === 'running' || submitState.kind === 'running';
+  const busy =
+    runState.kind === 'running' ||
+    submitState.kind === 'running' ||
+    customState.kind === 'running';
 
   return (
-    <div className="problem-detail-page">
-      <div className="problem-detail__statement">
-        <h2>{problem.title}</h2>
-        <div className="problem-detail__meta">
-          <span>{problem.difficulty}</span>
-          <span>{problem.weekLabel}</span>
-          <span>Time limit: {problem.timeLimitMs} ms</span>
-          <span>Memory limit: {problem.memoryLimitMb} MB</span>
+    <div className="lc-workspace">
+      <section className="lc-pane lc-pane--left">
+        <div className="lc-tabs" role="tablist" aria-label="Problem info">
+          <button type="button" className="lc-tab lc-tab--active" role="tab" aria-selected="true">
+            Description
+          </button>
         </div>
-        <div className="markdown">{problem.statement}</div>
-        <h3>Input Format</h3>
-        <div className="markdown">{problem.inputFormat}</div>
-        <h3>Output Format</h3>
-        <div className="markdown">{problem.outputFormat}</div>
-        {problem.constraints && (
-          <>
-            <h3>Constraints</h3>
-            <div className="markdown">{problem.constraints}</div>
-          </>
-        )}
-        <h3>Sample Test Cases</h3>
-        {problem.sampleTestCases.map((sample, index) => (
-          <div key={sample.id} className="sample-case">
-            <h4>Sample {index + 1}</h4>
-            <div>
-              <span>Input:</span>
-              <pre>{sample.inputData}</pre>
-            </div>
-            <div>
-              <span>Expected output:</span>
-              <pre>{sample.expectedOutput}</pre>
-            </div>
+        <div className="lc-pane__body">
+          <h2 className="lc-problem-title">{problem.title}</h2>
+          <div className="lc-badges">
+            <span className={`diff diff--${problem.difficulty}`}>
+              {problem.difficulty.charAt(0) + problem.difficulty.slice(1).toLowerCase()}
+            </span>
+            <span>{problem.weekLabel}</span>
+            <span>Time limit: {problem.timeLimitMs} ms</span>
+            <span>Memory limit: {problem.memoryLimitMb} MB</span>
           </div>
-        ))}
-      </div>
+          <div className="markdown">{problem.statement}</div>
+          {problem.sampleTestCases.map((sample, index) => (
+            <div key={sample.id} className="lc-example">
+              <h4>Example {index + 1}:</h4>
+              <div>
+                <span className="lc-example__label">Input:</span>
+                <pre>{sample.inputData}</pre>
+              </div>
+              <div>
+                <span className="lc-example__label">Output:</span>
+                <pre>{sample.expectedOutput}</pre>
+              </div>
+            </div>
+          ))}
+          <h3>Input Format</h3>
+          <div className="markdown">{problem.inputFormat}</div>
+          <h3>Output Format</h3>
+          <div className="markdown">{problem.outputFormat}</div>
+          {problem.constraints && (
+            <div className="lc-constraints">
+              <h3>Constraints</h3>
+              <div className="markdown">{problem.constraints}</div>
+            </div>
+          )}
+          <PracticeTimer problemTitle={problem.title} />
+        </div>
+      </section>
 
-      <div className="problem-detail__editor">
-        <div className="editor-toolbar">
+      <section className="lc-pane lc-pane--right">
+        <div className="lc-editor-bar">
           <label>
             Language
             <select
@@ -160,48 +329,169 @@ export function ProblemDetailPage() {
               ))}
             </select>
           </label>
-          <button type="button" onClick={handleReset} disabled={busy}>
+          <button
+            type="button"
+            className="btn btn-run"
+            onClick={handleReset}
+            disabled={busy}
+            title="Restore starter code"
+          >
             Reset
           </button>
-          <button type="button" onClick={handleRun} disabled={busy}>
-            {runState.kind === 'running' ? 'Running...' : 'Run Code'}
+          <button
+            type="button"
+            className="btn btn-run"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy}
+            title="Load code from a file on your system"
+          >
+            Upload File
           </button>
-          <button type="button" onClick={handleSubmit} disabled={busy}>
-            {submitState.kind === 'running' ? 'Submitting...' : 'Submit Code'}
-          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".java,.cpp,.c,.cc,.cxx,.py,.txt"
+            aria-label="Upload code file"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) {
+                void handleFileUpload(file);
+              }
+            }}
+          />
         </div>
+        {uploadError && (
+          <p className="error" style={{ padding: '0 0.75rem' }}>
+            {uploadError}
+          </p>
+        )}
 
         <CodeEditor language={language} value={code} onChange={setCode} />
 
-        <PracticeTimer problemTitle={problem.title} />
-
-        {runState.kind === 'error' && <p className="error">{runState.message}</p>}
-        {runResult && (
-          <>
-            <p className="run-status">
-              Run result: <strong>{statusLabel(runResult.status)}</strong>
-            </p>
-            <TestCaseResults results={runResult.testResults} />
-          </>
-        )}
-
-        {submitState.kind === 'error' && <p className="error">{submitState.message}</p>}
-        {submission && (
-          <div className="submission-result">
-            <h3>
-              Submission #{submission.id}: {statusLabel(submission.status)}
-            </h3>
-            <p>
-              {submission.runtimeMs !== null && `${submission.runtimeMs} ms`}
-              {submission.memoryUsedKb !== null && ` · ${submission.memoryUsedKb} KB`}
-            </p>
-            <TestCaseResults
-              results={submission.testResults}
-              title="Visible test results"
-            />
+        <div className="lc-console">
+          <div className="lc-tabs" role="tablist" aria-label="Console">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={consoleTab === 'testcase'}
+              className={consoleTab === 'testcase' ? 'lc-tab lc-tab--active' : 'lc-tab'}
+              onClick={() => setConsoleTab('testcase')}
+            >
+              Testcase
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={consoleTab === 'result'}
+              className={consoleTab === 'result' ? 'lc-tab lc-tab--active' : 'lc-tab'}
+              onClick={() => setConsoleTab('result')}
+            >
+              Test Result
+            </button>
           </div>
-        )}
-      </div>
+          <div className="lc-console__body">
+            {consoleTab === 'testcase' && (
+              <div className="custom-run">
+                <p className="help-text">
+                  Type your own input and run the program against it. Nothing is submitted or saved.
+                </p>
+                <textarea
+                  value={customInput}
+                  onChange={(e) => setCustomInput(e.target.value)}
+                  rows={4}
+                  placeholder={'e.g.\n3 4'}
+                  disabled={busy}
+                  aria-label="Custom input"
+                />
+                <div className="lc-actions">
+                  <button
+                    type="button"
+                    className="btn btn-run"
+                    onClick={handleCustomRun}
+                    disabled={busy}
+                  >
+                    {customState.kind === 'running' ? 'Running...' : 'Run with Custom Input'}
+                  </button>
+                </div>
+                {customState.kind === 'error' && <p className="error">{customState.message}</p>}
+                {customResult && (
+                  <div className="custom-run__result">
+                    <p className="run-status">
+                      Result: <strong>{statusLabel(customResult.status)}</strong>
+                      {customResult.runtimeMs !== null && ` · ${customResult.runtimeMs} ms`}
+                    </p>
+                    <div>
+                      <span>Output:</span>
+                      <pre>{customResult.output ? customResult.output : '(no output)'}</pre>
+                    </div>
+                    {customResult.error && (
+                      <div>
+                        <span>Error:</span>
+                        <pre>{customResult.error}</pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {consoleTab === 'result' && (
+              <div className="console-result">
+                {runState.kind === 'error' && <p className="error">{runState.message}</p>}
+                {submitState.kind === 'error' && <p className="error">{submitState.message}</p>}
+                {runResult && (
+                  <>
+                    <p className="run-status">
+                      Run result: <strong>{statusLabel(runResult.status)}</strong>
+                    </p>
+                    <TestCaseResults results={runResult.testResults} />
+                  </>
+                )}
+                {submission && (
+                  <div className="submission-result">
+                    <h3>
+                      Submission #{submission.id}: {statusLabel(submission.status)}
+                    </h3>
+                    <p>
+                      {submission.runtimeMs !== null && `${submission.runtimeMs} ms`}
+                      {submission.memoryUsedKb !== null && ` · ${submission.memoryUsedKb} KB`}
+                    </p>
+                    <TestCaseResults
+                      results={submission.testResults}
+                      title="Visible test results"
+                    />
+                  </div>
+                )}
+                {!runResult && !submission && runState.kind !== 'error' && submitState.kind !== 'error' && (
+                  <p className="help-text">
+                    Click Run Code or Submit Code to see results here.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="lc-actions">
+          <button
+            type="button"
+            className="btn btn-run"
+            onClick={handleRun}
+            disabled={busy}
+          >
+            {runState.kind === 'running' ? 'Running...' : 'Run Code'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-submit"
+            onClick={handleSubmit}
+            disabled={busy}
+          >
+            {submitState.kind === 'running' ? 'Submitting...' : 'Submit Code'}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

@@ -248,4 +248,52 @@ describe('ProblemDetailPage', () => {
     expect(screen.getByText('Practice time')).toBeTruthy();
     expect(screen.getByTestId('practice-timer-value').textContent).toBe('00:00:00');
   });
+
+  it('loads an uploaded code file into the editor', async () => {
+    localStorage.clear();
+    mockFetch.mockResolvedValueOnce(ok(PROBLEM));
+    await renderPage();
+
+    const file = new File(['public class Main { uploaded }'], 'Main.java', {
+      type: 'text/plain',
+    });
+    fireEvent.change(screen.getByLabelText('Upload code file'), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText('code') as HTMLTextAreaElement).value,
+      ).toContain('uploaded'),
+    );
+    localStorage.clear();
+  });
+
+  it('restores starter code on Reset', async () => {
+    localStorage.clear();
+    mockFetch.mockResolvedValueOnce(ok(PROBLEM));
+    await renderPage();
+
+    fireEvent.change(screen.getByLabelText('code'), {
+      target: { value: 'my custom attempt' },
+    });
+    fireEvent.click(screen.getByTitle('Restore starter code'));
+
+    expect((screen.getByLabelText('code') as HTMLTextAreaElement).value).toContain('class Main');
+    localStorage.clear();
+  });
+
+  it('rejects code files larger than the judge limit', async () => {
+    localStorage.clear();
+    mockFetch.mockResolvedValueOnce(ok(PROBLEM));
+    await renderPage();
+
+    const big = new File(['x'.repeat(300 * 1024)], 'big.java', { type: 'text/plain' });
+    fireEvent.change(screen.getByLabelText('Upload code file'), {
+      target: { files: [big] },
+    });
+
+    expect(await screen.findByText(/too large/)).toBeTruthy();
+    localStorage.clear();
+  });
 });

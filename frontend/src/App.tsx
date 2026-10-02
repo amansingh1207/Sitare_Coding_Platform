@@ -7,6 +7,7 @@ import { ProblemListPage } from './pages/ProblemListPage';
 import { ProblemDetailPage } from './pages/ProblemDetailPage';
 import { SubmissionHistoryPage } from './pages/SubmissionHistoryPage';
 import { SubmissionDetailPage } from './pages/SubmissionDetailPage';
+import { AdminPage } from './pages/AdminPage';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -15,6 +16,20 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   }
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return <p>Loading...</p>;
+  }
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  if (user.role !== 'PROFESSOR') {
+    return <Navigate to="/problems" replace />;
   }
   return <>{children}</>;
 }
@@ -34,10 +49,19 @@ function Header() {
         CodingJudge
       </Link>
       <nav>
+        {user && (
+          <>
+            <Link to="/problems">Problems</Link>
+            <Link to="/submissions">Submissions</Link>
+            {user.role === 'PROFESSOR' && <Link to="/admin">Admin</Link>}
+          </>
+        )}
+      </nav>
+      <span className="app-header__spacer" />
+      <nav>
         {user ? (
           <>
-            <Link to="/submissions">Submissions</Link>
-            <span>{user.username}</span>
+            <span className="app-header__user">{user.username}</span>
             <button type="button" onClick={handleLogout}>
               Logout
             </button>
@@ -92,6 +116,14 @@ function App() {
                 <ProtectedRoute>
                   <SubmissionDetailPage />
                 </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <AdminRoute>
+                  <AdminPage />
+                </AdminRoute>
               }
             />
             <Route path="/" element={<Navigate to="/problems" replace />} />

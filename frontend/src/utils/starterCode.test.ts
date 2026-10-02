@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { getStarterCode, isSupportedLanguage, SUPPORTED_LANGUAGES } from './starterCode';
+import {
+  detectLanguageFromFileName,
+  fileExtensionFor,
+  getStarterCode,
+  isSupportedLanguage,
+  SUPPORTED_LANGUAGES,
+} from './starterCode';
 
 describe('starterCode', () => {
   it('supports exactly Java, C++ and Python', () => {
@@ -30,5 +36,21 @@ describe('starterCode', () => {
     expect(isSupportedLanguage('PYTHON')).toBe(true);
     expect(isSupportedLanguage('RUBY')).toBe(false);
     expect(isSupportedLanguage('')).toBe(false);
+  });
+
+  it('detects the language from an uploaded file name', () => {
+    expect(detectLanguageFromFileName('Main.java')).toBe('JAVA');
+    expect(detectLanguageFromFileName('solution.CPP')).toBe('CPP');
+    expect(detectLanguageFromFileName('a.c')).toBe('CPP');
+    expect(detectLanguageFromFileName('a.cc')).toBe('CPP');
+    expect(detectLanguageFromFileName('notes.py')).toBe('PYTHON');
+    expect(detectLanguageFromFileName('notes.txt')).toBeNull();
+    expect(detectLanguageFromFileName('noextension')).toBeNull();
+  });
+
+  it('maps each language to a download file extension', () => {
+    expect(fileExtensionFor('JAVA')).toBe('java');
+    expect(fileExtensionFor('CPP')).toBe('cpp');
+    expect(fileExtensionFor('PYTHON')).toBe('py');
   });
 });

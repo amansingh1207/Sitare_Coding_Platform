@@ -1,5 +1,13 @@
 import { apiFetch, buildQuery } from './client';
-import type { Language, RunResult, SubmissionDetail, SubmissionRef, SubmissionSummary } from '../types';
+import type {
+  CustomRunPayload,
+  CustomRunResult,
+  Language,
+  RunResult,
+  SubmissionDetail,
+  SubmissionRef,
+  SubmissionSummary,
+} from '../types';
 
 export interface CodePayload {
   problemId: number;
@@ -39,6 +47,13 @@ const TERMINAL_STATUSES = new Set([
 export const submissionsApi = {
   async runCode(payload: CodePayload): Promise<RunResult> {
     return apiFetch<RunResult>('/submissions/run', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async runCustomInput(payload: CustomRunPayload): Promise<CustomRunResult> {
+    return apiFetch<CustomRunResult>('/submissions/run-custom', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

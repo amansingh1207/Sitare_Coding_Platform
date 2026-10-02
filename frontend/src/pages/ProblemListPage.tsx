@@ -66,21 +66,32 @@ export function ProblemListPage() {
       {loading && <p>Loading problems...</p>}
       {error && <p className="error">{error}</p>}
       {!loading && !error && problems.length === 0 && <p>No problems found.</p>}
-      <ul className="problem-list">
-        {problems.map((problem) => (
-          <li key={problem.id} className="problem-card">
-            <Link to={`/problems/${problem.slug}`}>
-              <h3>{problem.title}</h3>
-            </Link>
-            <div className="problem-card__meta">
-              <span>{problem.difficulty}</span>
-              <span>{problem.weekLabel}</span>
-              <span>{problem.timeLimitMs} ms</span>
-              <span>{problem.memoryLimitMb} MB</span>
-            </div>
-          </li>
-        ))}
-      </ul>
+      {!loading && !error && problems.length > 0 && (
+        <table className="problem-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Title</th>
+              <th>Difficulty</th>
+            </tr>
+          </thead>
+          <tbody>
+            {problems.map((problem, index) => (
+              <tr key={problem.id}>
+                <td className="problem-table__num">{index + 1}</td>
+                <td className="problem-table__title">
+                  <Link to={`/problems/${problem.slug}`}>{problem.title}</Link>
+                </td>
+                <td>
+                  <span className={`diff diff--${problem.difficulty}`}>
+                    {problem.difficulty.charAt(0) + problem.difficulty.slice(1).toLowerCase()}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

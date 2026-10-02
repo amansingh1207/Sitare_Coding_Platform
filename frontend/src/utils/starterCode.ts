@@ -47,3 +47,25 @@ export function getStarterCode(language: Language): string {
 export function isSupportedLanguage(value: string): value is Language {
   return value === 'JAVA' || value === 'CPP' || value === 'PYTHON';
 }
+
+const EXTENSION_TO_LANGUAGE: Record<string, Language> = {
+  java: 'JAVA',
+  cpp: 'CPP',
+  c: 'CPP',
+  cc: 'CPP',
+  cxx: 'CPP',
+  py: 'PYTHON',
+};
+
+/** Detects the editor language from an uploaded file name, if possible. */
+export function detectLanguageFromFileName(fileName: string): Language | null {
+  const dot = fileName.lastIndexOf('.');
+  if (dot < 0) {
+    return null;
+  }
+  return EXTENSION_TO_LANGUAGE[fileName.slice(dot + 1).toLowerCase()] ?? null;
+}
+
+export function fileExtensionFor(language: Language): string {
+  return language === 'JAVA' ? 'java' : language === 'CPP' ? 'cpp' : 'py';
+}

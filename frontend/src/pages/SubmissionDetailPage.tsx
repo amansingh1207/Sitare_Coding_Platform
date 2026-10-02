@@ -5,6 +5,7 @@ import { ApiError } from '../api/client';
 import { TestCaseResults } from '../components/TestCaseResults';
 import { CodeViewer } from '../components/CodeViewer';
 import { formatMemory, formatRuntime, formatTimestamp, languageLabel, statusLabel } from '../utils/format';
+import { fileExtensionFor } from '../utils/starterCode';
 import type { SubmissionDetail } from '../types';
 
 export function SubmissionDetailPage() {
@@ -75,6 +76,25 @@ export function SubmissionDetailPage() {
       </p>
 
       <h3>Source code</h3>
+      <p>
+        <button
+          type="button"
+          className="btn btn-run"
+          onClick={() => {
+            const blob = new Blob([submission.sourceCode], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = `submission-${submission.id}.${fileExtensionFor(submission.language)}`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          Download code
+        </button>
+      </p>
       <CodeViewer language={submission.language} code={submission.sourceCode} />
 
       {/* Only sample test results are returned by the API; hidden cases are never sent. */}

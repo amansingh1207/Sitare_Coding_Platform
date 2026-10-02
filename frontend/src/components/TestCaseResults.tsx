@@ -38,6 +38,14 @@ export function TestCaseResults({ results, title = 'Test Results' }: TestCaseRes
               <span className="test-case__meta">{result.runtimeMs} ms</span>
             )}
           </div>
+          {result.inputData !== undefined && result.inputData !== null && (
+            <div className="test-case__io">
+              <div>
+                <span>Input:</span>
+                <pre>{result.inputData}</pre>
+              </div>
+            </div>
+          )}
           {result.expectedOutput !== undefined && result.expectedOutput !== null && (
             <div className="test-case__io">
               <div>
@@ -50,6 +58,17 @@ export function TestCaseResults({ results, title = 'Test Results' }: TestCaseRes
               </div>
             </div>
           )}
+          {(result.expectedOutput === undefined || result.expectedOutput === null) &&
+            (result.inputData === undefined || result.inputData === null) &&
+            result.actualOutput !== undefined &&
+            result.actualOutput !== null && (
+              <div className="test-case__io">
+                <div>
+                  <span>Output:</span>
+                  <pre>{result.actualOutput}</pre>
+                </div>
+              </div>
+            )}
         </div>
       ))}
     </div>

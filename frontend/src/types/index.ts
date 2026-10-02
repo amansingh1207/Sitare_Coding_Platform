@@ -73,8 +73,25 @@ export interface ProblemDetail extends ProblemSummary {
 export interface TestCaseResult {
   testCaseId: number;
   status: SubmissionStatus;
+  inputData?: string | null;
   actualOutput: string | null;
   expectedOutput?: string | null;
+  runtimeMs: number | null;
+  memoryUsedKb: number | null;
+}
+
+export interface CustomRunPayload {
+  problemId: number;
+  language: Language;
+  sourceCode: string;
+  stdin: string;
+}
+
+export interface CustomRunResult {
+  status: SubmissionStatus;
+  output: string | null;
+  error: string | null;
+  exitCode: number | null;
   runtimeMs: number | null;
   memoryUsedKb: number | null;
 }
@@ -111,4 +128,37 @@ export interface SubmissionSummary {
   runtimeMs: number | null;
   memoryUsedKb: number | null;
   submittedAt: string;
+}
+
+export interface AdminProblemSummary {
+  id: number;
+  slug: string;
+  title: string;
+  difficulty: Difficulty;
+  weekLabel: string;
+  testCaseCount: number;
+  sampleCount: number;
+}
+
+export interface ImportedProblemSummary {
+  slug: string;
+  title: string;
+  status: 'CREATED' | 'SKIPPED';
+  sampleCount: number;
+  hiddenCount: number;
+  message: string;
+}
+
+export interface ImportPackResponse {
+  problems: ImportedProblemSummary[];
+  totalProblems: number;
+  totalSamples: number;
+  totalHidden: number;
+}
+
+export interface ImportPackPayload {
+  weekLabel: string;
+  defaultTimeLimitMs: number;
+  defaultMemoryLimitMb: number;
+  defaultDifficulty: Difficulty;
 }
