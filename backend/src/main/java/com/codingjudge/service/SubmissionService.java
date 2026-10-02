@@ -3,6 +3,7 @@ package com.codingjudge.service;
 import com.codingjudge.exception.ForbiddenException;
 import com.codingjudge.exception.PayloadTooLargeException;
 import com.codingjudge.exception.ResourceNotFoundException;
+import com.codingjudge.judge.JudgeEngine;
 import com.codingjudge.model.dto.request.SubmitRequest;
 import com.codingjudge.model.dto.response.SubmissionDetailResponse;
 import com.codingjudge.model.dto.response.SubmissionRefResponse;
@@ -33,17 +34,20 @@ public class SubmissionService {
     private final SubmissionTestResultRepository testResultRepository;
     private final UserRepository userRepository;
     private final ProblemRepository problemRepository;
+    private final JudgeEngine judgeEngine;
     private final int maxSourceSizeKb;
 
     public SubmissionService(SubmissionRepository submissionRepository,
                              SubmissionTestResultRepository testResultRepository,
                              UserRepository userRepository,
                              ProblemRepository problemRepository,
+                             JudgeEngine judgeEngine,
                              @Value("${judge.max-source-size-kb:256}") int maxSourceSizeKb) {
         this.submissionRepository = submissionRepository;
         this.testResultRepository = testResultRepository;
         this.userRepository = userRepository;
         this.problemRepository = problemRepository;
+        this.judgeEngine = judgeEngine;
         this.maxSourceSizeKb = maxSourceSizeKb;
     }
 
@@ -63,7 +67,13 @@ public class SubmissionService {
         submission.setSourceCode(request.getSourceCode());
         submission.setStatus(SubmissionStatus.PENDING);
 
-        return SubmissionRefResponse.from(submissionRepository.save(submission));
+        submission = submissionRepository.save(submission);
+        
+        // Judge the submission
+        submission = judgeEngine.judge(submission);
+        submissionRepository.save(submission);
+
+        return SubmissionRefResponse.from(submission);
     }
 
     @Transactional(readOnly = true)
@@ -74,9 +84,7 @@ public class SubmissionService {
         requireOwnership(user, submission);
 
         // Only sample test case results are ever exposed.
-        List<SubmissionTestResultResponse> results = testResultRepository
-                .findBySubmissionId(submission.getId())
-                .stream()
+        List<SubmissionTestResultResponse> results = submission.getTestResults().stream()
                 .filter(result -> Boolean.TRUE.equals(result.getTestCase().getSample()))
                 .map(SubmissionTestResultResponse::from)
                 .toList();
