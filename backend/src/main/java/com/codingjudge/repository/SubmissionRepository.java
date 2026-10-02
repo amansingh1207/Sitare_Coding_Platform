@@ -22,6 +22,12 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
 
     List<Submission> findByUserIdAndStatus(Long userId, SubmissionStatus status);
 
+    /** IDs of problems the user has solved (at least one ACCEPTED submission). */
+    @Query("SELECT DISTINCT s.problem.id FROM Submission s "
+            + "WHERE s.user.id = :userId AND s.status = :status")
+    List<Long> findSolvedProblemIds(@Param("userId") Long userId,
+                                    @Param("status") SubmissionStatus status);
+
     List<Submission> findByUserIdAndLanguage(Long userId, Language language);
 
     @EntityGraph(attributePaths = "problem")

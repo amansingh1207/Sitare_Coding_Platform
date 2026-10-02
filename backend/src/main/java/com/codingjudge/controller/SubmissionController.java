@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -63,6 +64,13 @@ public class SubmissionController {
             @Valid @RequestBody CustomRunRequest request) {
         CustomRunResponse result = submissionService.runCustom(userDetails.getUsername(), request);
         return ResponseEntity.ok(ApiResponse.ok(result));
+    }
+
+    @GetMapping("/solved-ids")
+    public ResponseEntity<ApiResponse<List<Long>>> solvedIds(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        List<Long> ids = submissionService.solvedProblemIds(userDetails.getUsername());
+        return ResponseEntity.ok(ApiResponse.ok(ids));
     }
 
     @GetMapping("/{id}")

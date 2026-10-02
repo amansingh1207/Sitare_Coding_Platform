@@ -254,6 +254,34 @@ class SubmissionPipelineTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void solvedIdsIncludesProblemAfterAcceptedSubmit() throws Exception {
+        submit(tokenA, "JAVA", "public class Main {}");
+
+        mockMvc.perform(get("/api/submissions/solved-ids")
+                        .header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data[0]").value(problemId));
+    }
+
+    @Test
+    void solvedIdsExcludesProblemWithoutAcceptedSubmit() throws Exception {
+        submit(tokenB, "JAVA", "/*WRONG*/ public class Main {}");
+
+        mockMvc.perform(get("/api/submissions/solved-ids")
+                        .header("Authorization", "Bearer " + tokenB))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    void solvedIdsRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/submissions/solved-ids"))
+                .andExpect(status().isUnauthorized());
+    }
+
     private String submitBody(String language, String sourceCode) {
         return String.format("""
                 {"problemId": %d, "language": "%s", "sourceCode": "%s"}

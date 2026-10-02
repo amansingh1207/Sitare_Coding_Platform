@@ -139,6 +139,16 @@ public class SubmissionService {
         return SubmissionDetailResponse.from(submission, results);
     }
 
+    /**
+     * IDs of problems the user has solved. Backs the problem list's solved
+     * checkmarks and the progress dashboard; a single indexed query.
+     */
+    @Transactional(readOnly = true)
+    public List<Long> solvedProblemIds(String email) {
+        User user = requireUser(email);
+        return submissionRepository.findSolvedProblemIds(user.getId(), SubmissionStatus.ACCEPTED);
+    }
+
     @Transactional(readOnly = true)
     public Page<SubmissionSummaryResponse> listForUser(String email, Long problemId,
                                                        String status, String language,
