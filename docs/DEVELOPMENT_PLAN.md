@@ -249,24 +249,27 @@ This plan breaks the project into small, independently testable phases. Each pha
 
 ## Phase 10 — Judge Robustness
 
-**Status:** Partially Complete (JudgeEngineTest added; full live Docker lifecycle tests blocked by low system memory)
+**Status:** Complete (2026-10-02) — validated end-to-end against a real Docker daemon
 
 **Goal:** Test all edge cases and result types.
 
 **Deliverables:**
-- [x] Comprehensive judge test suite (JudgeEngineTest.java — 8 tests covering all 7 statuses)
-- [x] Edge case tests (large input, malformed output)
-- [x] Repeated submission tests
-- [ ] Process cleanup verification (requires live Docker)
+- [x] Comprehensive judge test suite (JudgeEngineTest — 8 tests; OutputComparatorTest — 17; LanguageExecutorContractTest — 4)
+- [x] Edge case tests (large input, malformed output, whitespace rules)
+- [x] Repeated submission tests (verified 4x live, no leaks)
+- [x] Process cleanup verification (0 leftover containers after live runs)
 
 **Acceptance Criteria:**
-- [x] All 7 result types tested (in code, blocked by low VM memory at runtime)
+- [x] All 7 result types tested (live, all three languages)
 - [x] Multiple sample tests work
 - [x] Multiple hidden tests work
 - [x] Large input handled correctly
 - [x] Malformed output handled correctly
 - [x] Repeated submissions work
-- [ ] Containers are always cleaned up (requires live Docker)
+- [x] Containers are always cleaned up
+
+**Bugs found and fixed during live validation** are recorded in
+`docs/JUDGE_DESIGN.md` section 11.6.
 
 ---
 

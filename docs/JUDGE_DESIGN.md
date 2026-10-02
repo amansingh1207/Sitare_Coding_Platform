@@ -330,6 +330,55 @@ try {
 
 ---
 
+## 11.5 Live End-to-End Verification
+
+The full chain — API submit, container creation, source injection, compile,
+execution across all test cases, output comparison, result persistence — was
+validated against a real Docker daemon on 2026-10-02:
+
+| Scenario | Language | Result |
+|----------|----------|--------|
+| Correct solution | JAVA / CPP / PYTHON | `ACCEPTED` |
+| Incorrect output | JAVA / CPP | `WRONG_ANSWER` |
+| Invalid source | CPP | `COMPILATION_ERROR` |
+| Uncaught exception (divide by zero) | JAVA | `RUNTIME_ERROR` |
+| Infinite loop | JAVA / CPP / PYTHON | `TIME_LIMIT_EXCEEDED` |
+| Memory exhaustion | JAVA / PYTHON | `MEMORY_LIMIT_EXCEEDED` |
+| Repeated submissions (4x) | CPP | All `ACCEPTED`, 0 leftover containers |
+
+## 11.6 Implementation Constraints Discovered
+
+These Docker behaviours forced specific implementation choices and are easy to
+regress. Each was found by live validation, not review:
+
+1. **`docker cp` cannot write into a read-only rootfs.** The archive API rejects
+   writes with "container rootfs is marked read-only" even when the target is a
+   writable tmpfs mount. Source is written with a `base64 -d` exec instead.
+2. **exec stdin is unreliable.** Streaming input through docker-java's async exec
+   ends with "The pipe has been ended". Test input is written to `/tmp/input.txt`
+   and redirected: `sh -c "<run cmd> < /tmp/input.txt"`.
+3. **A container must be kept alive.** The image's default `CMD` exits
+   immediately, so every later exec fails with "container is not running". The
+   judge creates containers with `tail -f /dev/null`.
+4. **Compilation must happen in the same container** that later runs the program;
+   otherwise the produced class files/binaries do not exist at execution time.
+5. **`/workspace` and `/tmp` need `exec` in their tmpfs options**, otherwise a
+   compiled C++ binary fails with "Permission denied".
+6. **Interpreted languages must skip compilation.** An empty compile command
+   produces an invalid exec ("executable file not found in $PATH"). The
+   `LanguageExecutor.requiresCompilation()` hook controls this.
+7. **Kill and remove must be attempted independently.** If a container already
+   exited, `kill` throws and would skip `remove`, leaking the container.
+8. **Out-of-memory is usually not exit code 137.** Runtimes report OOM themselves
+   and exit non-zero (the JVM exits 1). The judge matches stderr signatures
+   (`OutOfMemoryError`, `MemoryError`, `bad_alloc`) in addition to 137.
+9. **docker-java 3.x needs an explicit HTTP transport.** Without it the client
+   throws "dockerCmdExecFactory was not specified" on first use.
+10. **A class with two constructors needs `@Autowired`** on the DI constructor,
+    otherwise Spring silently uses the no-arg one and injects nulls.
+
+---
+
 ## 12. Performance Considerations
 
 | Concern | Mitigation |

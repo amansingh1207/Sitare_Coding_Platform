@@ -12,6 +12,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -20,12 +22,29 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class DockerSandbox {
 
+    private static final long COMPILE_TIMEOUT_SECONDS = 30;
+    private static final java.util.regex.Pattern SAFE_FILE_NAME =
+            java.util.regex.Pattern.compile("[A-Za-z0-9_.-]{1,64}");
+    private static final int MAX_LOGGED_CHARS = 500;
+    private static final org.slf4j.Logger LOG =
+            org.slf4j.LoggerFactory.getLogger(DockerSandbox.class);
+
+    /** Truncates captured program output so logs stay bounded. */
+    private static String truncateForLog(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() <= MAX_LOGGED_CHARS ? text : text.substring(0, MAX_LOGGED_CHARS) + "...";
+    }
+
     private final DockerClient dockerClient;
     private final String image;
     private final long defaultTimeoutMs;
     private final int defaultMemoryLimitMb;
     private final double defaultCpuLimit;
 
+    /** Test-only constructor. Not used by Spring: the container of this class
+     *  requires the Docker-backed constructor below to be wired. */
     public DockerSandbox() {
         this.dockerClient = null;
         this.image = "";
@@ -34,6 +53,7 @@ public class DockerSandbox {
         this.defaultCpuLimit = 1.0;
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
     public DockerSandbox(DockerClient dockerClient,
                          @Value("${judge.docker-image:codingjudge/sandbox:latest}") String image,
                          @Value("${judge.timeout-ms:10000}") long defaultTimeoutMs,
@@ -54,7 +74,24 @@ public class DockerSandbox {
         try {
             containerId = createContainer();
             copySourceToContainer(containerId, sourceCode, executor);
+            return compileInContainer(containerId, executor);
 
+        } catch (Exception e) {
+            return CompilationResult.failure("Compilation failed: " + e.getMessage(), -1);
+        } finally {
+            if (containerId != null) {
+                cleanupContainer(containerId);
+            }
+        }
+    }
+
+    /**
+     * Compiles inside an already-started container that has the source copied in.
+     * Compilation must happen in the same container that later runs the program,
+     * otherwise the produced binaries/class files do not survive.
+     */
+    private CompilationResult compileInContainer(String containerId, LanguageExecutor executor) {
+        try {
             ExecCreateCmdResponse exec = dockerClient.execCreateCmd(containerId)
                     .withCmd(executor.getCompileCommand(executor.getSourceFileName()).split(" "))
                     .withWorkingDir("/workspace")
@@ -63,15 +100,16 @@ public class DockerSandbox {
                     .exec();
 
             StringBuilder output = new StringBuilder();
-            ResultCallback.Adapter callback = new ResultCallback.Adapter() {
+            ResultCallback.Adapter<Frame> callback = new ResultCallback.Adapter<>() {
+                @Override
                 public void onNext(Frame frame) {
-                    output.append(new String(frame.getPayload()));
+                    output.append(new String(frame.getPayload(), StandardCharsets.UTF_8));
                 }
             };
 
             dockerClient.execStartCmd(exec.getId())
                     .exec(callback)
-                    .awaitCompletion(30, TimeUnit.SECONDS);
+                    .awaitCompletion(COMPILE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
             InspectExecResponse inspect = dockerClient.inspectExecCmd(exec.getId()).exec();
             int exitCode = inspect.getExitCode();
@@ -83,11 +121,8 @@ public class DockerSandbox {
             return CompilationResult.failure(outputStr, exitCode);
 
         } catch (Exception e) {
+            LOG.warn("Sandbox compilation error", e);
             return CompilationResult.failure("Compilation failed: " + e.getMessage(), -1);
-        } finally {
-            if (containerId != null) {
-                cleanupContainer(containerId);
-            }
         }
     }
 
@@ -95,6 +130,7 @@ public class DockerSandbox {
                                    LanguageExecutor executor,
                                    long timeoutMs, int memoryLimitMb) {
         if (dockerClient == null) {
+            LOG.error("Docker client is not configured; cannot execute submission code");
             return ExecutionResult.error("Docker not available in test environment", -1);
         }
         String containerId = null;
@@ -102,38 +138,38 @@ public class DockerSandbox {
             containerId = createContainer();
             copySourceToContainer(containerId, sourceCode, executor);
 
-            // Compile first
-            CompilationResult compileResult = compile(sourceCode, executor);
-            if (!compileResult.success()) {
-                return ExecutionResult.compilationError(compileResult.output(), compileResult.exitCode());
+            // Compile in the SAME container that will run the program.
+            // Interpreted languages skip this step entirely.
+            if (executor.requiresCompilation()) {
+                CompilationResult compileResult = compileInContainer(containerId, executor);
+                if (!compileResult.success()) {
+                    LOG.warn("Compilation failed: exitCode={} output={}",
+                            compileResult.exitCode(), truncateForLog(compileResult.output()));
+                    return ExecutionResult.compilationError(
+                            compileResult.output(), compileResult.exitCode());
+                }
             }
 
-            // Execute
+            // Feed stdin from a file rather than piping it: exec stdin via
+            // docker-java's async exec ends with "The pipe has been ended".
+            writeInputFile(containerId, input);
+
+            // Execute with input redirected from that file.
+            String runCmd = executor.getExecuteCommand("Main") + " < /tmp/input.txt";
             ExecCreateCmdResponse exec = dockerClient.execCreateCmd(containerId)
-                    .withCmd(executor.getExecuteCommand("Main").split(" "))
+                    .withCmd("sh", "-c", runCmd)
                     .withWorkingDir("/workspace")
-                    .withAttachStdin(true)
                     .withAttachStdout(true)
                     .withAttachStderr(true)
                     .exec();
 
-            // Write input to stdin
-            PipedInputStream pipedIn = new PipedInputStream();
-            PipedOutputStream pipedOut = new PipedOutputStream(pipedIn);
-            new Thread(() -> {
-                try {
-                    pipedOut.write((input != null ? input : "").getBytes());
-                    pipedOut.close();
-                } catch (IOException ignored) {
-                }
-            }).start();
-
             StringBuilder stdout = new StringBuilder();
             StringBuilder stderr = new StringBuilder();
 
-            ResultCallback.Adapter callback = new ResultCallback.Adapter() {
+            ResultCallback.Adapter<Frame> callback = new ResultCallback.Adapter<>() {
+                @Override
                 public void onNext(Frame frame) {
-                    String payload = new String(frame.getPayload());
+                    String payload = new String(frame.getPayload(), StandardCharsets.UTF_8);
                     if (frame.getStreamType() == StreamType.STDOUT) {
                         stdout.append(payload);
                     } else if (frame.getStreamType() == StreamType.STDERR) {
@@ -142,15 +178,29 @@ public class DockerSandbox {
                 }
             };
 
-            dockerClient.execStartCmd(exec.getId())
-                    .withStdIn(pipedIn)
+            boolean completed = dockerClient.execStartCmd(exec.getId())
                     .exec(callback)
                     .awaitCompletion(timeoutMs, TimeUnit.MILLISECONDS);
+            callback.close();
+
+            if (!completed) {
+                // Execution outran the time limit. The container is killed and
+                // removed in the finally block, which also reaps the process.
+                LOG.warn("Sandbox execution exceeded {} ms", timeoutMs);
+                return ExecutionResult.timeout();
+            }
 
             InspectExecResponse inspect = dockerClient.inspectExecCmd(exec.getId()).exec();
             int exitCode = inspect.getExitCode();
 
             if (exitCode != 0) {
+                String err = stderr.toString();
+                if (looksOutOfMemory(err)) {
+                    LOG.warn("Sandbox execution ran out of memory: exitCode={}", exitCode);
+                    return ExecutionResult.oomKilledWithOutput(err, exitCode);
+                }
+                LOG.warn("Sandbox execution failed: exitCode={} stderr={}",
+                        exitCode, truncateForLog(err));
                 return ExecutionResult.error(stderr.toString(), exitCode);
             }
             return ExecutionResult.success(stdout.toString(), 0, 0);
@@ -159,6 +209,7 @@ public class DockerSandbox {
             Thread.currentThread().interrupt();
             return ExecutionResult.timeout();
         } catch (Exception e) {
+            LOG.warn("Sandbox execution error", e);
             return ExecutionResult.error("Execution failed: " + e.getMessage(), -1);
         } finally {
             if (containerId != null) {
@@ -179,6 +230,12 @@ public class DockerSandbox {
                 .withCpuCount((long) (defaultCpuLimit * 1000000000L)) // nanoCPUs
                 .withPidsLimit(64L)
                 .withReadonlyRootfs(true)
+                // The root filesystem stays read-only; only these two paths are
+                // writable. /workspace holds the submitted source and compiler
+                // output, /tmp is scratch space for the program itself.
+                .withTmpFs(Map.of(
+                        "/workspace", "size=64m,mode=1777,exec",
+                        "/tmp", "size=64m,mode=1777,exec"))
                 .withCapDrop(Capability.ALL)
                 .withAutoRemove(false);
 
@@ -188,6 +245,10 @@ public class DockerSandbox {
                 .withAttachStdout(true)
                 .withAttachStderr(true)
                 .withTty(false)
+                // Keep the container alive: the image's default CMD exits
+                // immediately, which would make every later exec fail with
+                // "container is not running".
+                .withCmd("tail", "-f", "/dev/null")
                 .withWorkingDir("/workspace")
                 .exec();
 
@@ -196,44 +257,111 @@ public class DockerSandbox {
         return containerId;
     }
 
+    /**
+     * Writes the submitted source into the container's /workspace.
+     *
+     * Two Docker behaviours force this approach:
+     *  1. The archive/copy API refuses to write into a container created with a
+     *     read-only root filesystem ("container rootfs is marked read-only"), even
+     *     when the target path is a tmpfs mount. Verified against Docker 29.x.
+     *  2. Streaming over exec stdin through docker-java's async exec ends with
+     *     "The pipe has been ended".
+     *
+     * So the source is base64-encoded and decoded inside the container. /workspace
+     * is a writable tmpfs mount, so the rest of the filesystem stays read-only.
+     * Base64 output is shell-safe (no quotes, spaces or metacharacters).
+     */
     private void copySourceToContainer(String containerId, String sourceCode, LanguageExecutor executor) {
+        String fileName = executor.getSourceFileName();
+        // Defence in depth: the name comes from our own adapters, but validate it
+        // anyway so it can never become a path-traversal vector.
+        if (!SAFE_FILE_NAME.matcher(fileName).matches()) {
+            throw new IllegalArgumentException("Unsafe source file name: " + fileName);
+        }
+
+        String encoded = Base64.getEncoder()
+                .encodeToString(sourceCode.getBytes(StandardCharsets.UTF_8));
+
         try {
-            Path tempDir = Files.createTempDirectory("sandbox-");
-            Path sourceFile = tempDir.resolve(executor.getSourceFileName());
-            Files.writeString(sourceFile, sourceCode);
-
-            // Create tar archive in memory
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            try (TarArchiveOutputStream tarOut = new TarArchiveOutputStream(baos)) {
-                TarArchiveEntry entry = new TarArchiveEntry(executor.getSourceFileName());
-                entry.setSize(sourceCode.getBytes().length);
-                tarOut.putArchiveEntry(entry);
-                tarOut.write(sourceCode.getBytes());
-                tarOut.closeArchiveEntry();
-                tarOut.finish();
-            }
-            byte[] tarBytes = baos.toByteArray();
-
-            dockerClient.copyArchiveToContainerCmd(containerId)
-                    .withRemotePath("/workspace")
-                    .withTarInputStream(new ByteArrayInputStream(tarBytes))
+            ExecCreateCmdResponse exec = dockerClient.execCreateCmd(containerId)
+                    .withCmd("sh", "-c", "echo " + encoded + " | base64 -d > /workspace/" + fileName)
+                    .withWorkingDir("/workspace")
+                    .withAttachStdout(true)
+                    .withAttachStderr(true)
                     .exec();
 
-            Files.deleteIfExists(sourceFile);
-            Files.deleteIfExists(tempDir);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to copy source to container: " + e.getMessage(), e);
+            dockerClient.execStartCmd(exec.getId())
+                    .exec(new ResultCallback.Adapter())
+                    .awaitCompletion(30, TimeUnit.SECONDS);
+
+            InspectExecResponse inspect = dockerClient.inspectExecCmd(exec.getId()).exec();
+            if (inspect.getExitCode() != 0) {
+                throw new IllegalStateException(
+                        "Failed to write source into container (exit " + inspect.getExitCode() + ")");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to write source to container: " + e.getMessage(), e);
         }
     }
 
+    /**
+     * Detects out-of-memory from the program's own error text.
+     *
+     * Runtimes report OOM themselves and exit non-zero rather than being killed,
+     * so exit code 137 alone misses most cases:
+     *   Java    -> java.lang.OutOfMemoryError
+     *   CPython -> MemoryError
+     *   C++     -> std::bad_alloc / terminate called after throwing
+     */
+    private static boolean looksOutOfMemory(String stderr) {
+        if (stderr == null) {
+            return false;
+        }
+        return stderr.contains("OutOfMemoryError")
+                || stderr.contains("MemoryError")
+                || stderr.contains("bad_alloc")
+                || stderr.contains("Cannot allocate memory")
+                || stderr.contains("out of memory");
+    }
+
+    /** Writes the test-case input to /tmp/input.txt so it can be redirected into the program. */
+    private void writeInputFile(String containerId, String input) {
+        String encoded = Base64.getEncoder()
+                .encodeToString((input != null ? input : "").getBytes(StandardCharsets.UTF_8));
+        try {
+            ExecCreateCmdResponse exec = dockerClient.execCreateCmd(containerId)
+                    .withCmd("sh", "-c", "echo " + encoded + " | base64 -d > /tmp/input.txt")
+                    .withAttachStdout(true)
+                    .withAttachStderr(true)
+                    .exec();
+
+            dockerClient.execStartCmd(exec.getId())
+                    .exec(new ResultCallback.Adapter())
+                    .awaitCompletion(30, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to write test input: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Always removes the container. Kill and remove are attempted independently:
+     * if the container already exited, kill throws and would otherwise prevent the
+     * remove from running, leaking the container.
+     */
     private void cleanupContainer(String containerId) {
         try {
             dockerClient.killContainerCmd(containerId).exec();
+        } catch (Exception e) {
+            LOG.debug("Kill container {} failed (may already be stopped): {}",
+                    containerId, e.getMessage());
+        }
+        try {
             dockerClient.removeContainerCmd(containerId)
                     .withForce(true)
                     .withRemoveVolumes(true)
                     .exec();
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            LOG.error("Failed to remove sandbox container {}", containerId, e);
         }
     }
 }

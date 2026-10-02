@@ -33,6 +33,11 @@ public class PythonExecutor implements LanguageExecutor {
     }
 
     @Override
+    public boolean requiresCompilation() {
+        return false;
+    }
+
+    @Override
     public String getExecuteCommand(String className) {
         return "python3 " + SOURCE_FILE;
     }
