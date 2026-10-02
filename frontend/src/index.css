@@ -823,6 +823,107 @@ button {
   font-weight: 500;
 }
 
+/* ---------- Progress dashboard ---------- */
+
+.dashboard {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+  background: var(--lc-panel);
+  border: 1px solid var(--lc-border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.progress-ring {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  flex-shrink: 0;
+}
+
+.progress-ring__text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+}
+
+.progress-ring__text strong {
+  font-size: 1.05rem;
+}
+
+.progress-ring__text span {
+  color: var(--lc-faint);
+}
+
+.dashboard__breakdown {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.progress-row .diff {
+  width: 3rem;
+}
+
+.progress-row__count {
+  color: var(--lc-muted);
+  min-width: 3rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--lc-run-bg);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-bar__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.progress-bar__fill--EASY {
+  background: var(--lc-easy);
+}
+
+.progress-bar__fill--MEDIUM {
+  background: var(--lc-medium);
+}
+
+.progress-bar__fill--HARD {
+  background: var(--lc-hard);
+}
+
+.problem-table__status {
+  width: 3.5rem;
+  text-align: center;
+}
+
+.solved-check {
+  color: var(--lc-green);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
 @media (max-width: 900px) {
   .lc-workspace {
     flex-direction: column;
@@ -836,5 +937,10 @@ button {
 
   .test-case__io {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard {
+    flex-direction: column;
+    gap: 1rem;
   }
 }

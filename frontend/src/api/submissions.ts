@@ -70,6 +70,10 @@ export const submissionsApi = {
     return apiFetch<SubmissionDetail>(`/submissions/${id}`);
   },
 
+  async solvedIds(): Promise<number[]> {
+    return apiFetch<number[]>('/submissions/solved-ids');
+  },
+
   async list(filters: SubmissionFilters = {}): Promise<SubmissionListData> {
     return apiFetch<SubmissionListData>(
       `/submissions${buildQuery(filters as Record<string, string | number | undefined>)}`,
