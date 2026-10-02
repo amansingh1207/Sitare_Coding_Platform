@@ -1,5 +1,6 @@
 package com.codingjudge.judge;
 
+import com.codingjudge.judge.executor.CppExecutor;
 import com.codingjudge.judge.executor.JavaExecutor;
 import com.codingjudge.model.dto.response.SubmissionTestResultResponse;
 import com.codingjudge.model.entity.Submission;
@@ -20,15 +21,18 @@ public class JudgeEngine {
     private final OutputComparator comparator;
     private final SubmissionTestResultRepository testResultRepository;
     private final JavaExecutor javaExecutor;
+    private final CppExecutor cppExecutor;
 
     public JudgeEngine(DockerSandbox sandbox,
                        OutputComparator comparator,
                        SubmissionTestResultRepository testResultRepository,
-                       JavaExecutor javaExecutor) {
+                       JavaExecutor javaExecutor,
+                       CppExecutor cppExecutor) {
         this.sandbox = sandbox;
         this.comparator = comparator;
         this.testResultRepository = testResultRepository;
         this.javaExecutor = javaExecutor;
+        this.cppExecutor = cppExecutor;
     }
 
     public Submission judge(Submission submission) {
@@ -92,7 +96,7 @@ public class JudgeEngine {
     private LanguageExecutor getExecutor(Language language) {
         return switch (language) {
             case JAVA -> javaExecutor;
-            case CPP -> throw new UnsupportedOperationException("C++ not yet implemented");
+            case CPP -> cppExecutor;
             case PYTHON -> throw new UnsupportedOperationException("Python not yet implemented");
         };
     }
