@@ -17,14 +17,13 @@ The judge is the core of CodingJudge. It executes untrusted student code inside 
 ```mermaid
 stateDiagram-v2
     [*] --> PENDING: Student submits code
-    PENDING --> JUDGING: Judge picks up submission
-    JUDGING --> ACCEPTED: All tests passed
-    JUDGING --> WRONG_ANSWER: Output mismatch
-    JUDGING --> COMPILATION_ERROR: Compilation failed
-    JUDGING --> RUNTIME_ERROR: Runtime crash
-    JUDGING --> TIME_LIMIT_EXCEEDED: Timeout
-    JUDGING --> MEMORY_LIMIT_EXCEEDED: OOM
-    JUDGING --> INTERNAL_ERROR: Infrastructure failure
+    PENDING --> ACCEPTED: All tests passed
+    PENDING --> WRONG_ANSWER: Output mismatch
+    PENDING --> COMPILATION_ERROR: Compilation failed
+    PENDING --> RUNTIME_ERROR: Runtime crash
+    PENDING --> TIME_LIMIT_EXCEEDED: Timeout
+    PENDING --> MEMORY_LIMIT_EXCEEDED: OOM
+    PENDING --> INTERNAL_ERROR: Infrastructure failure
     ACCEPTED --> [*]
     WRONG_ANSWER --> [*]
     COMPILATION_ERROR --> [*]
@@ -34,12 +33,17 @@ stateDiagram-v2
     INTERNAL_ERROR --> [*]
 ```
 
+Judging is synchronous, so a submission is only ever observed as `PENDING` or
+as a final verdict; the intermediate `JUDGING` state is retained in the enum for
+the queue-backed worker described in `ARCHITECTURE.md` section 8 but is never
+written today.
+
 ### States
 
 | State | Description |
 |-------|-------------|
-| `PENDING` | Submission created, awaiting judgment |
-| `JUDGING` | Judge is currently processing |
+| `PENDING` | Submission created, not yet judged |
+| `JUDGING` | Reserved for the asynchronous worker; never written today |
 | `ACCEPTED` | All test cases passed |
 | `WRONG_ANSWER` | At least one test case output mismatch |
 | `COMPILATION_ERROR` | Source code failed to compile |

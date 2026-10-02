@@ -208,7 +208,7 @@ Stores per-test-case results for each submission.
 | Value | Description |
 |-------|-------------|
 | `PENDING` | Submission received, not yet judged |
-| `JUDGING` | Currently being judged |
+| `JUDGING` | Reserved for the asynchronous worker; never written today |
 | `ACCEPTED` | All test cases passed |
 | `WRONG_ANSWER` | Output did not match expected |
 | `COMPILATION_ERROR` | Source code failed to compile |

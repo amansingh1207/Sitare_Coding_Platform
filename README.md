@@ -103,12 +103,19 @@ docker-compose up -d postgres
 
 # Start backend (from backend/ directory)
 cd backend
-./mvnw spring-boot:run
+mvn spring-boot:run
 
 # Start frontend (from frontend/ directory)
 cd frontend
 npm install
 npm run dev
+```
+
+The backend also needs a built sandbox image, which the judge runs student code
+inside:
+
+```bash
+docker build -t codingjudge/sandbox:latest docker/sandbox
 ```
 
 ---
@@ -119,10 +126,11 @@ npm run dev
 
 ```bash
 cd backend
-./mvnw compile          # Compile
-./mvnw test             # Run tests
-./mvnw package -DskipTests  # Package
-./mvnw spring-boot:run  # Run application
+mvn compile             # Compile
+mvn test                # Run tests
+mvn package             # Package and run tests
+mvn package -DskipTests # Package only
+mvn spring-boot:run     # Run application
 ```
 
 ### Frontend
@@ -140,9 +148,9 @@ npm run build           # Production build
 
 ```bash
 docker-compose up -d           # Start all services
-docker-compose logs -f backend  # View backend logs
-docker-compose down             # Stop all services
-docker-compose up -d --build    # Rebuild and start
+docker-compose logs -f backend # View backend logs
+docker-compose down            # Stop all services
+docker-compose up -d --build   # Rebuild and start
 ```
 
 ---
@@ -150,18 +158,19 @@ docker-compose up -d --build    # Rebuild and start
 ## How to Run Tests
 
 ```bash
-# Backend tests
-cd backend && ./mvnw test
+# Backend: unit, integration, security and end-to-end flow tests
+cd backend && mvn test
 
-# Frontend tests
+# Frontend
 cd frontend && npm test
-
-# Judge tests
-cd judge && python -m pytest tests/
-
-# Integration tests
-cd tests/integration && ./run-tests.sh
+cd frontend && npm run type-check
 ```
+
+The backend suite needs no Docker daemon. The `test` profile swaps the real
+`DockerSandbox` for a stub (`TestJudgeConfig`) that returns outcomes selected by
+marker comments in the submitted source, so every verdict branch can be driven
+deterministically. The live container path is verified separately against real
+Docker; see [JUDGE_DESIGN.md](docs/JUDGE_DESIGN.md) sections 11.5 and 11.7.
 
 ---
 
@@ -175,16 +184,13 @@ The judge is the core of CodingJudge. Student-submitted code is **untrusted** an
 Student submits code
        │
        ▼
-Spring Boot API creates Submission record
-       │
-       ▼
-Judge Worker picks up the submission
+Spring Boot API creates Submission record (status PENDING)
        │
        ▼
 Docker container is created with resource limits
        │
        ▼
-Code is compiled (if needed) inside container
+Code is compiled (if needed) inside the container
        │
        ▼
 Compiled program is executed against each test case
@@ -193,11 +199,20 @@ Compiled program is executed against each test case
 Output is compared with expected output
        │
        ▼
-Result is determined and persisted
+Verdict is determined and persisted
        │
        ▼
 Frontend displays the result
 ```
+
+Judging happens **synchronously** inside the request that submitted the code,
+so the response already carries a final verdict. This keeps the architecture
+simple; [ARCHITECTURE.md](docs/ARCHITECTURE.md) section 8 records how the judge
+would be extracted to a queue-backed worker if volume grows.
+
+"Run Code" takes a separate path: it executes only the visible sample test cases
+and creates no submission record, so iterating in the editor neither reveals
+hidden tests nor pollutes history.
 
 ### Sandbox Security
 
@@ -205,7 +220,7 @@ Each Docker container:
 - Has **no network access**
 - Has **limited memory** (default 256 MB)
 - Has **limited CPU** (default 1 core)
-- Has a **read-only filesystem** (except `/tmp`)
+- Has a **read-only filesystem** (except `/workspace` and `/tmp`)
 - Is **destroyed** after execution
 - Has **no access** to the Docker socket or host resources
 
@@ -229,7 +244,20 @@ Detailed documentation is in the `docs/` directory:
 
 ## Project Status
 
-This project is currently in **Phase 0** (specification and planning). See [DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) for the full implementation roadmap.
+All sixteen planned phases are complete. The platform supports registration and
+JWT login, problem browsing with search and filters, an editor for Java, C++ and
+Python, sample-test runs, judged submissions, submission history and a practice
+timer.
+
+| Area | Coverage |
+|------|----------|
+| Backend tests | 111 passing |
+| Frontend tests | 37 passing |
+| Live judge verification | All 7 verdicts, all 3 languages |
+
+See [DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) for the per-phase record,
+including what each phase actually changed and the issues found along the way.
+Known limitations are listed in [SECURITY.md](docs/SECURITY.md) section 11.
 
 ---
 

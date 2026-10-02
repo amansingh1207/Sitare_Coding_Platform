@@ -356,14 +356,19 @@ Submit student code for judging against the **full test suite** (including hidde
   "success": true,
   "data": {
     "id": 42,
-    "status": "PENDING",
+    "status": "ACCEPTED",
     "submittedAt": "2026-10-02T10:30:00Z"
   },
   "error": null
 }
 ```
 
-**Note:** The submission is processed asynchronously. The client should poll for results using `GET /api/submissions/{id}`.
+**Note:** Judging runs synchronously inside the request, so `status` in this
+response is already the final verdict, not `PENDING`. The `202 Accepted` status
+code and the client-side polling in the editor are retained so the contract still
+holds if judging is later moved off the request thread, as anticipated in
+`ARCHITECTURE.md` section 8. A client polling `GET /api/submissions/{id}` simply
+observes a terminal status on its first call.
 
 **Errors:**
 - `400 BAD_REQUEST` — Validation failed

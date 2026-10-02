@@ -56,14 +56,11 @@ coding-judge/
 │   └── DEVELOPMENT_PLAN.md    # Phased implementation plan
 │
 ├── frontend/                  # React + TypeScript frontend
-├── backend/                   # Spring Boot backend
-├── judge/                     # Judge execution engine
-├── tests/                     # Test suites
-│   ├── backend/               # Backend unit/integration tests
-│   ├── frontend/              # Frontend tests
-│   ├── judge/                 # Judge engine tests
-│   └── integration/           # End-to-end integration tests
-└── docker/                    # Dockerfiles and sandbox configs
+├── backend/                   # Spring Boot backend, including the judge engine
+│   ├── src/main/java/com/codingjudge/judge/   # Sandbox, executors, verdict logic
+│   └── src/test/              # Unit, integration, security and flow tests
+├── docker/sandbox/            # Judge sandbox image definition
+└── tests/                     # Reserved for cross-cutting suites (currently empty)
 ```
 
 ---

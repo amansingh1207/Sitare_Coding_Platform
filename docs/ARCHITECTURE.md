@@ -195,13 +195,18 @@ backend/src/main/java/com/codingjudge/
 │   ├── LanguageExecutor.java
 │   ├── DockerSandbox.java
 │   ├── OutputComparator.java
+│   ├── ExecutionResult.java
+│   ├── CompilationResult.java
 │   └── executor/
 │       ├── JavaExecutor.java
 │       ├── CppExecutor.java
 │       └── PythonExecutor.java
 └── exception/
     ├── GlobalExceptionHandler.java
-    └── CustomExceptions.java
+    ├── ForbiddenException.java
+    ├── ResourceNotFoundException.java
+    ├── DuplicateResourceException.java
+    └── PayloadTooLargeException.java
 ```
 
 ### 5.3 Layers
@@ -235,8 +240,7 @@ sequenceDiagram
     Student->>Frontend: Write code & click Submit
     Frontend->>Backend: POST /api/submissions
     Backend->>DB: Create Submission (PENDING)
-    Backend->>Judge: Submit job
-    Backend-->>Frontend: Submission ID (202 Accepted)
+    Backend->>Judge: Judge (synchronous, same thread)
 
     Judge->>Docker: Create sandbox container
     Docker-->>Judge: Container ready
@@ -256,10 +260,14 @@ sequenceDiagram
     end
 
     Judge->>Docker: Destroy container
-    Frontend->>Backend: GET /api/submissions/:id
-    Backend-->>Frontend: Submission result
+    Backend-->>Frontend: Submission ID + final verdict (202 Accepted)
     Frontend->>Student: Display result
 ```
+
+Judging runs on the request thread, so the `202 Accepted` response already
+carries a final verdict. The frontend still polls `GET /api/submissions/{id}`,
+which simply returns that same terminal state on the first call; this keeps the
+contract valid if judging later moves to the worker described below.
 
 ---
 

@@ -1,7 +1,7 @@
 # DEVELOPMENT_PLAN.md — CodingJudge Phased Implementation Plan
 
 **Version:** 1.0
-**Status:** Draft
+**Status:** All phases complete
 **Last Updated:** 2026-10-02
 
 ---
@@ -385,21 +385,42 @@ Both were invisible to unit tests and only surfaced by exercising the flow.
 
 ## Phase 15 — Documentation and Cleanup
 
-**Status:** Not Started
+**Status:** Complete (2026-10-02)
 
 **Goal:** Finalize documentation and clean up.
 
 **Deliverables:**
-- [ ] Updated README
-- [ ] Updated technical docs
-- [ ] Code cleanup
-- [ ] Final validation
+- [x] Updated README (status, working build and test commands, judge flow)
+- [x] Updated technical docs (ARCHITECTURE, API_SPEC, DATABASE, JUDGE_DESIGN, SECURITY)
+- [x] Code cleanup (no TODO/FIXME/stub markers left in production source)
+- [x] Final validation (111 backend, 37 frontend, type-check and build clean)
 
 **Acceptance Criteria:**
-- [ ] All documentation is up to date
-- [ ] All tests pass
-- [ ] No TODO comments in code
-- [ ] Code follows conventions
+- [x] All documentation is up to date
+- [x] All tests pass
+- [x] No TODO comments in code
+- [x] Code follows conventions
+
+**Corrections made to documentation that had drifted from the code:**
+
+- `README.md` claimed the project was in Phase 0, told developers to run
+  `./mvnw` (there is no Maven wrapper), and documented Python judge tests under
+  `judge/` (that directory is empty; the judge is Java inside the backend).
+- `CLAUDE.md` repeated the `mvnw` and Python judge commands and listed
+  directories that do not exist.
+- `AGENTS.md` described a `judge/` service and a `tests/` tree that were never
+  built.
+- `API_SPEC.md`, `ARCHITECTURE.md`, `JUDGE_DESIGN.md` and `DATABASE.md`
+  described asynchronous judging and a `PENDING → JUDGING → verdict` state
+  machine. Judging is synchronous and `JUDGING` is never written, so the
+  diagrams and the example response were misleading. All now state the actual
+  behaviour and record that `JUDGING` is reserved for the future worker.
+- `ARCHITECTURE.md` referenced `exception/CustomExceptions.java` and omitted
+  `ExecutionResult`/`CompilationResult`; the package tree now matches the code.
+
+**Standing guidance added:** judge changes must be verified against real Docker,
+not only the stubbed test suite. Several defects in this project passed every
+unit test and were found only by live submission.
 
 ---
 

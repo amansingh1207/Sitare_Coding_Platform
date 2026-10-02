@@ -6,6 +6,8 @@ This file provides operational instructions for Claude-compatible agent workflow
 
 ## Build Commands
 
+There is no Maven wrapper in this repository; use a local Maven 3.8+.
+
 ### Backend (Spring Boot + Maven)
 
 ```bash
@@ -13,19 +15,19 @@ This file provides operational instructions for Claude-compatible agent workflow
 cd backend
 
 # Compile
-./mvnw compile
+mvn compile
 
 # Run tests
-./mvnw test
+mvn test
 
 # Run specific test class
-./mvnw test -Dtest=SubmissionServiceTest
+mvn test -Dtest=FullUserFlowIntegrationTest
 
 # Package (skip tests)
-./mvnw package -DskipTests
+mvn package -DskipTests
 
 # Run application
-./mvnw spring-boot:run
+mvn spring-boot:run
 ```
 
 ### Frontend (React + TypeScript + Vite)
@@ -55,15 +57,17 @@ npm run build
 
 ### Judge
 
+The judge is Java code inside the backend, not a separate service:
+
 ```bash
-# Navigate to judge
-cd judge
+# Judge source
+backend/src/main/java/com/codingjudge/judge/
 
-# Run tests (Python-based judge tests)
-python -m pytest tests/
+# Judge tests run as part of the backend suite
+cd backend && mvn test -Dtest=JudgeEngineTest
 
-# Run specific test
-python -m pytest tests/test_judge.py -v
+# The live container path needs the sandbox image
+docker build -t codingjudge/sandbox:latest docker/sandbox
 ```
 
 ### Docker (Full Stack)
@@ -88,20 +92,18 @@ docker-compose up -d --build
 
 | Path | Purpose |
 |------|---------|
-| `backend/src/main/java/` | Spring Boot application source |
-| `backend/src/main/resources/` | Configuration, migrations |
-| `backend/src/test/` | Backend tests |
-| `frontend/src/` | React application source |
+| `backend/src/main/java/com/codingjudge/` | Spring Boot application source |
+| `backend/src/main/java/com/codingjudge/judge/` | Judge engine: sandbox, executor, verdict |
+| `backend/src/main/resources/db/migration/` | Flyway migrations |
+| `backend/src/test/` | Backend unit, integration, security and flow tests |
 | `frontend/src/components/` | Reusable UI components |
 | `frontend/src/pages/` | Page-level components |
 | `frontend/src/api/` | API client functions |
 | `frontend/src/hooks/` | Custom React hooks |
-| `judge/` | Judge execution engine |
-| `judge/src/` | Judge source code |
-| `judge/tests/` | Judge tests |
+| `frontend/src/utils/` | Formatting helpers (duration, status, templates) |
 | `docs/` | All specification documents |
-| `docker/` | Dockerfiles and sandbox configs |
-| `tests/` | Cross-cutting test suites |
+| `docker/sandbox/` | Judge sandbox image definition |
+| `tests/` | Reserved for cross-cutting suites; currently empty |
 
 ---
 
@@ -157,10 +159,10 @@ Error responses:
 
 ```bash
 # Backend compilation check
-cd backend && ./mvnw compile
+cd backend && mvn compile
 
 # Backend test suite
-cd backend && ./mvnw test
+cd backend && mvn test
 
 # Frontend type check
 cd frontend && npm run type-check
@@ -174,9 +176,24 @@ docker-compose ps
 
 ---
 
+## Testing Notes
+
+The backend suite must not require a Docker daemon. The `test` profile
+(`application-test.properties` plus `TestJudgeConfig`) replaces `DockerSandbox`
+with a stub that selects outcomes from marker comments in the submitted source:
+`CE`, `RE`, `TLE`, `OOM`, `WRONG`, and unmarked source treated as a correct
+solution. This keeps verdict mapping testable, but it cannot prove the container
+behaves as designed.
+
+**Verify judge changes against real Docker as well.** Several defects in this
+codebase passed every unit test and were only found by live submission; they are
+recorded in `docs/JUDGE_DESIGN.md` sections 11.6 and 11.7.
+
+---
+
 ## Forbidden Operations
 
-- Do NOT run `./mvnw spring-boot:run` without PostgreSQL running
+- Do NOT run `mvn spring-boot:run` without PostgreSQL running
 - Do NOT execute student code outside Docker
 - Do NOT modify database schema without a migration
 - Do NOT commit `.env` files
