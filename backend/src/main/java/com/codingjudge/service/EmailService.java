@@ -1,62 +1,92 @@
 package com.codingjudge.service;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
-import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 public class EmailService {
 
-    private final JavaMailSender javaMailSender;
+    private final RestTemplate restTemplate = new RestTemplate();
 
-    private final String mailFrom = "codingjudgesitare@gmail.com";
+    @Value("${sendgrid.api.key:}")
+    private String sendGridApiKey;
+
+    @Value("${spring.mail.from:codingjudgesitare@gmail.com}")
+    private String mailFrom;
 
     @Value("${spring.mail.from-name:CodingJudge}")
     private String mailFromName;
 
-    public EmailService(JavaMailSender javaMailSender) {
-        this.javaMailSender = javaMailSender;
-        System.out.println("[EmailService] Initialized - mailFrom: " + mailFrom + ", mailFromName: " + mailFromName);
+    public EmailService() {
+        System.out.println("[EmailService] Initialized with SendGrid");
     }
 
     /**
-     * Send verification OTP email to the user through Gmail SMTP.
+     * Send verification OTP email to the user via SendGrid API.
      */
-    public void sendVerificationOtp(String email, String otp, long expiryMinutes) throws MessagingException, java.io.UnsupportedEncodingException {
+    public void sendVerificationOtp(String email, String otp, long expiryMinutes) {
         String htmlContent = buildVerificationTemplate(email, otp, expiryMinutes);
-        sendHtml(email, "Coding Judge - OTP Verification", htmlContent);
+        sendEmail(email, "Coding Judge - OTP Verification", htmlContent);
     }
 
     /**
-     * Send password reset OTP email to the user through Gmail SMTP.
+     * Send password reset OTP email to the user.
      */
-    public void sendPasswordResetOtp(String email, String otp, long expiryMinutes) throws MessagingException, java.io.UnsupportedEncodingException {
+    public void sendPasswordResetOtp(String email, String otp, long expiryMinutes) {
         String htmlContent = buildPasswordResetTemplate(email, otp, expiryMinutes);
-        sendHtml(email, "Coding Judge - OTP Verification", htmlContent);
+        sendEmail(email, "Coding Judge - Password Reset OTP", htmlContent);
     }
 
-    private void sendHtml(String toEmail, String subject, String htmlContent) throws MessagingException, java.io.UnsupportedEncodingException {
-        System.out.println("[EmailService] sendHtml called - toEmail: " + toEmail + ", mailFrom: " + (mailFrom != null && !mailFrom.isBlank() ? "SET (" + mailFrom + ")" : "NOT SET") + ", mailFromName: " + mailFromName);
-        if (mailFrom == null || mailFrom.isBlank()) {
-            throw new IllegalStateException("spring.mail.from is not configured");
+    private void sendEmail(String toEmail, String subject, String htmlContent) {
+        System.out.println("[EmailService] Sending email to: " + email + ", subject: " + subject);
+        
+        if (sendGridApiKey == null || sendGridApiKey.isBlank()) {
+            System.err.println("[EmailService] WARNING: SendGrid API key not configured, skipping email");
+            return;
         }
-        System.out.println("[EmailService] Creating MimeMessage");
-        MimeMessage message = javaMailSender.createMimeMessage();
-        System.out.println("[EmailService] MimeMessage created, creating MimeMessageHelper");
-        MimeMessageHelper helper = new MimeMessageHelper(message, StandardCharsets.UTF_8.name());
-        System.out.println("[EmailService] Setting from: " + mailFrom + " (" + mailFromName + ")");
-        helper.setFrom(mailFrom, mailFromName);
-        helper.setTo(toEmail);
-        helper.setSubject(subject);
-        helper.setText(htmlContent, true);
-        System.out.println("[EmailService] Sending message via JavaMailSender");
-        javaMailSender.send(message);
-        System.out.println("[EmailService] Message sent successfully");
+
+        try {
+            // Build SendGrid API request
+            Map<String, Object> personalization = new HashMap<>();
+            Map<String, String> to = new HashMap<>();
+            to.put("email", email);
+            personalization.put("to", new Object[]{to});
+            personalization.put("subject", subject);
+
+            Map<String, Object> content = new HashMap<>();
+            content.put("type", "text/html");
+            content.put("value", htmlContent);
+
+            Map<String, Object> requestBody = new HashMap<>();
+            Map<String, String> from = new HashMap<>();
+            from.put("email", "codingjudgesitare@gmail.com");
+            from.put("name", "CodingJudge");
+            requestBody.put("from", from);
+            requestBody.put("personalizations", new Object[]{personalization});
+            requestBody.put("content", new Object[]{content});
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(sendGridApiKey);
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
+            
+            String url = "https://api.sendgrid.com/v3/mail/send";
+            restTemplate.postForEntity(url, request, String.class);
+            
+            System.out.println("[EmailService] Email sent successfully to: " + email);
+        } catch (Exception e) {
+            System.err.println("[EmailService] Failed to send email: " + e.getMessage());
+            e.printStackTrace();
+            // Don't throw exception - email failure shouldn't break user registration
+        }
     }
 
     /**
