@@ -148,6 +148,39 @@ class SubmissionWorkerTest {
     }
 
     @Test
+    void burstOfFiftySubmissionsDrainsCompletely() {
+        List<Long> ids = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            ids.add(submit("public class Main {}").getId());
+        }
+        assertThat(submissionRepository.countByStatus(SubmissionStatus.PENDING)).isEqualTo(50);
+
+        long started = System.currentTimeMillis();
+        submissionWorker.poll();
+        // One poll claims max-claim-per-tick; keep polling until drained.
+        while (submissionRepository.countByStatus(SubmissionStatus.PENDING) > 0
+                || submissionRepository.countByStatus(SubmissionStatus.JUDGING) > 0) {
+            submissionWorker.poll();
+            if (System.currentTimeMillis() - started > 60_000) {
+                fail("Burst did not drain within 60 s");
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                fail("Interrupted while draining burst");
+            }
+        }
+        long drainMs = System.currentTimeMillis() - started;
+        System.out.println("[SubmissionWorkerTest] 50-burst drained in " + drainMs + " ms");
+
+        for (Long id : ids) {
+            assertThat(awaitTerminal(id).getStatus()).isEqualTo(SubmissionStatus.ACCEPTED);
+        }
+        assertThat(testResultRepository.count()).isEqualTo(50L * 2L);
+    }
+
+    @Test
     void concurrentPollsNeverDuplicateResults() throws Exception {
         Long id = submit("public class Main {}").getId();
 
