@@ -66,8 +66,8 @@ public class EmailService {
 
             Map<String, Object> requestBody = new HashMap<>();
             Map<String, String> from = new HashMap<>();
-            from.put("email", "codingjudgesitare@gmail.com");
-            from.put("name", "CodingJudge");
+            from.put("email", mailFrom);
+            from.put("name", mailFromName);
             requestBody.put("from", from);
             requestBody.put("personalizations", new Object[]{personalization});
             requestBody.put("content", new Object[]{content});
@@ -85,7 +85,9 @@ public class EmailService {
         } catch (Exception e) {
             System.err.println("[EmailService] Failed to send email: " + e.getMessage());
             e.printStackTrace();
-            // Don't throw exception - email failure shouldn't break user registration
+            // Rethrow so callers surface the failure instead of leaving the
+            // user in a silent dead-end (OTP stored but never delivered).
+            throw new IllegalStateException("FAILED_TO_SEND_OTP: " + e.getMessage(), e);
         }
     }
 
