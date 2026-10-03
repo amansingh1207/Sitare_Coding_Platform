@@ -20,14 +20,14 @@ import java.util.List;
 @Component
 public class JudgeEngine {
 
-    private final DockerSandbox sandbox;
+    private final CodeExecutionService sandbox;
     private final OutputComparator comparator;
     private final SubmissionTestResultRepository testResultRepository;
     private final JavaExecutor javaExecutor;
     private final CppExecutor cppExecutor;
     private final PythonExecutor pythonExecutor;
 
-    public JudgeEngine(DockerSandbox sandbox,
+    public JudgeEngine(CodeExecutionService sandbox,
                        OutputComparator comparator,
                        SubmissionTestResultRepository testResultRepository,
                        JavaExecutor javaExecutor,
@@ -130,7 +130,8 @@ public class JudgeEngine {
         long maxMemoryKb = 0;
         List<TestOutcome> outcomes = new ArrayList<>(testCases.size());
 
-        // One container, one compilation for the whole batch (see DockerSandbox).
+        // One call per batch; batching granularity is the provider's business
+        // (Docker: one container + one compilation, Judge0: one call per test).
         List<String> inputs = testCases.stream().map(TestCase::getInputData).toList();
         List<ExecutionResult> execResults = sandbox.executeBatch(
                 sourceCode, inputs, executor, timeoutMs, memoryLimitMb);

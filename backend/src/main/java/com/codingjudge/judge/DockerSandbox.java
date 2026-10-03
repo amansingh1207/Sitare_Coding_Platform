@@ -9,6 +9,7 @@ import com.github.dockerjava.api.model.*;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -20,7 +21,8 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 @Component
-public class DockerSandbox {
+@ConditionalOnProperty(name = "execution.provider", havingValue = "docker", matchIfMissing = true)
+public class DockerSandbox implements CodeExecutionService {
 
     private static final long COMPILE_TIMEOUT_SECONDS = 30;
     /** Base64 characters per exec call. Keeps each command well under the shell arg limit. */
@@ -152,6 +154,7 @@ public class DockerSandbox {
      * what makes multi-test submissions finish in seconds instead of minutes.
      * Each program run is still a fresh process with its own time limit.
      */
+    @Override
     public List<ExecutionResult> executeBatch(String sourceCode, List<String> inputs,
                                              LanguageExecutor executor,
                                              long timeoutMs, int memoryLimitMb) {
