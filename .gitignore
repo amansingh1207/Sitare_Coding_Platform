@@ -53,3 +53,9 @@ frontend/coverage/
 # Temporary files
 tmp/
 temp/
+
+# Build artifacts & test outputs
+compile_output*.txt
+test_output*.txt
+structure.txt
+backend/META-INF/
