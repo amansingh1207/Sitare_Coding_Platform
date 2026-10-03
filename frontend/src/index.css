@@ -456,6 +456,7 @@ button {
   padding: 0.4rem 0.75rem;
   border-bottom: 1px solid var(--lc-border);
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .lc-editor-bar label {
@@ -474,7 +475,7 @@ button {
 
 .code-editor {
   flex: 1;
-  min-height: 200px;
+  min-height: 120px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -482,6 +483,46 @@ button {
 
 .code-editor > div {
   flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* CodeMirror owns scrolling: it must fill the pane exactly, otherwise the
+   top lines get clipped behind the pane's overflow:hidden with no way back. */
+.code-editor .cm-editor {
+  height: 100%;
+}
+
+.code-editor .cm-scroller {
+  overflow: auto;
+}
+
+/* ---------- Draggable splitters ---------- */
+
+.lc-splitter {
+  flex-shrink: 0;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.lc-splitter:hover,
+.lc-splitter:focus-visible {
+  background: var(--lc-border);
+  outline: none;
+}
+
+.lc-splitter--v {
+  width: 8px;
+  margin: 0 -4px;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.lc-splitter--h {
+  height: 8px;
+  margin: -4px 0;
+  cursor: row-resize;
+  z-index: 5;
 }
 
 .lc-console {
@@ -766,6 +807,64 @@ button {
   margin-top: 0.5rem;
 }
 
+.practice-timer__duration {
+  width: 4.5rem;
+  border: 1px solid var(--lc-border);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.practice-timer__done {
+  color: var(--lc-red, #e74c3c);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+/* Compact inline timer inside the editor bar (next to Upload File). */
+.lc-editor-bar .practice-timer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0 0 0 auto;
+}
+
+.lc-editor-bar .practice-timer__display {
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.lc-editor-bar .practice-timer__label {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--lc-muted);
+}
+
+.lc-editor-bar .practice-timer__value {
+  font-size: 1rem;
+}
+
+.lc-editor-bar .practice-timer__controls {
+  margin-top: 0;
+  align-items: center;
+}
+
+.lc-editor-bar .practice-timer__controls button {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.lc-editor-bar .practice-timer__duration {
+  padding: 0.25rem 0.4rem;
+}
+
+.lc-editor-bar .practice-timer__hint {
+  display: none;
+}
+
 /* ---------- Admin ---------- */
 
 .admin-section {
@@ -933,6 +1032,18 @@ button {
   .lc-pane--left,
   .lc-pane--right {
     min-height: 480px;
+    flex: none !important;
+    width: 100%;
+  }
+
+  /* Stacked layout: dragging makes no sense, hide the handles. */
+  .lc-splitter {
+    display: none;
+  }
+
+  .lc-console {
+    height: auto !important;
+    min-height: 200px;
   }
 
   .test-case__io {

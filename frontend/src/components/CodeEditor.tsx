@@ -25,7 +25,10 @@ export function CodeEditor({ language, value, onChange, readOnly = false }: Code
     <div className="code-editor">
       <CodeMirror
         value={value}
-        height="400px"
+        // Fill the pane instead of a fixed pixel box: a fixed height clips
+        // the top lines when the layout shrinks and traps scroll inside a
+        // nested container. 100% lets CodeMirror's own scroller own scrolling.
+        height="100%"
         extensions={extensions}
         onChange={onChange}
         readOnly={readOnly}

@@ -142,4 +142,68 @@ describe('PracticeTimer', () => {
     render();
     expect(screen.queryByText(/Currently viewing/)).toBeNull();
   });
+
+  it('accepts a manual countdown duration', () => {
+    render();
+    const input = screen.getByLabelText('Countdown duration in minutes');
+    fireEvent.change(input, { target: { value: '1' } });
+    fireEvent.blur(input);
+    expect(value()).toBe('00:01:00');
+  });
+
+  it('counts down to zero and announces when time is up', () => {
+    render();
+    const input = screen.getByLabelText('Countdown duration in minutes');
+    fireEvent.change(input, { target: { value: '1' } });
+    fireEvent.blur(input);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(value()).toBe('00:00:30');
+
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(value()).toBe('00:00:00');
+    expect(screen.getByText("Time's up!")).toBeTruthy();
+    // Stopped: Start is offered again, Pause is gone.
+    expect(screen.getByRole('button', { name: 'Start' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+  });
+
+  it('reset restores the full countdown duration', () => {
+    render();
+    const input = screen.getByLabelText('Countdown duration in minutes');
+    fireEvent.change(input, { target: { value: '1' } });
+    fireEvent.blur(input);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    act(() => {
+      vi.advanceTimersByTime(70_000);
+    });
+    expect(screen.getByText("Time's up!")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    expect(value()).toBe('00:01:00');
+    expect(screen.queryByText("Time's up!")).toBeNull();
+  });
+
+  it('clearing the duration returns to count-up mode', () => {
+    render();
+    const input = screen.getByLabelText('Countdown duration in minutes');
+    fireEvent.change(input, { target: { value: '2' } });
+    fireEvent.blur(input);
+    expect(value()).toBe('00:02:00');
+
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(value()).toBe('00:00:05');
+  });
 });

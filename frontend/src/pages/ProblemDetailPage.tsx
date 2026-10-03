@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { problemsApi } from '../api/problems';
 import { submissionsApi } from '../api/submissions';
@@ -97,6 +98,102 @@ export function ProblemDetailPage() {
   const [customResult, setCustomResult] = useState<CustomRunResult | null>(null);
   const [customState, setCustomState] = useState<ActionState>({ kind: 'idle' });
   const [consoleTab, setConsoleTab] = useState<ConsoleTab>('testcase');
+
+  // Resizable layout: description/editor split (%) and console height (px),
+  // persisted so a refresh keeps the user's layout.
+  const [leftPct, setLeftPct] = useState<number>(() => {
+    const saved = Number(localStorage.getItem('codingjudge_pane_split'));
+    return Number.isFinite(saved) && saved >= 20 && saved <= 80 ? saved : 50;
+  });
+  const [consoleH, setConsoleH] = useState<number>(() => {
+    const saved = Number(localStorage.getItem('codingjudge_console_h'));
+    return Number.isFinite(saved) && saved >= 140 && saved <= 640 ? saved : 240;
+  });
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{
+    kind: 'v' | 'h';
+    startX: number;
+    startY: number;
+    startPct: number;
+    startH: number;
+  } | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('codingjudge_pane_split', String(leftPct));
+    } catch {
+      // Best-effort only.
+    }
+  }, [leftPct]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('codingjudge_console_h', String(consoleH));
+    } catch {
+      // Best-effort only.
+    }
+  }, [consoleH]);
+
+  const onSplitterDown =
+    (kind: 'v' | 'h') =>
+    (e: ReactPointerEvent<HTMLDivElement>): void => {
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      dragRef.current = {
+        kind,
+        startX: e.clientX,
+        startY: e.clientY,
+        startPct: leftPct,
+        startH: consoleH,
+      };
+    };
+
+  const onSplitterMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current;
+    if (!drag) {
+      return;
+    }
+    if (drag.kind === 'v') {
+      const width = workspaceRef.current?.getBoundingClientRect().width ?? 1;
+      const next = drag.startPct + ((e.clientX - drag.startX) / width) * 100;
+      setLeftPct(Math.min(80, Math.max(20, next)));
+    } else {
+      const next = drag.startH + (drag.startY - e.clientY);
+      setConsoleH(Math.min(640, Math.max(140, next)));
+    }
+  };
+
+  const endSplitterDrag = (): void => {
+    dragRef.current = null;
+  };
+
+  const onSplitterKeyDown =
+    (kind: 'v' | 'h') =>
+    (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+      const step = kind === 'v' ? 2 : 20;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (kind === 'v') {
+          setLeftPct((v) => Math.max(20, v - step));
+        } else {
+          setConsoleH((v) => Math.max(140, v - step));
+        }
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (kind === 'v') {
+          setLeftPct((v) => Math.min(80, v + step));
+        } else {
+          setConsoleH((v) => Math.min(640, v + step));
+        }
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        if (kind === 'v') {
+          setLeftPct(50);
+        } else {
+          setConsoleH(240);
+        }
+      }
+    };
 
   useEffect(() => {
     setLoading(true);
@@ -268,8 +365,8 @@ export function ProblemDetailPage() {
     customState.kind === 'running';
 
   return (
-    <div className="lc-workspace">
-      <section className="lc-pane lc-pane--left">
+    <div className="lc-workspace" ref={workspaceRef}>
+      <section className="lc-pane lc-pane--left" style={{ flex: `0 0 ${leftPct}%` }}>
         <div className="lc-tabs" role="tablist" aria-label="Problem info">
           <button type="button" className="lc-tab lc-tab--active" role="tab" aria-selected="true">
             Description
@@ -309,11 +406,23 @@ export function ProblemDetailPage() {
               <div className="markdown">{problem.constraints}</div>
             </div>
           )}
-          <PracticeTimer problemTitle={problem.title} />
         </div>
       </section>
 
-      <section className="lc-pane lc-pane--right">
+      <div
+        className="lc-splitter lc-splitter--v"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize description and editor panels"
+        tabIndex={0}
+        onPointerDown={onSplitterDown('v')}
+        onPointerMove={onSplitterMove}
+        onPointerUp={endSplitterDrag}
+        onPointerCancel={endSplitterDrag}
+        onKeyDown={onSplitterKeyDown('v')}
+      />
+
+      <section className="lc-pane lc-pane--right" style={{ flex: '1 1 0', minWidth: 0 }}>
         <div className="lc-editor-bar">
           <label>
             Language
@@ -347,6 +456,7 @@ export function ProblemDetailPage() {
           >
             Upload File
           </button>
+          <PracticeTimer problemTitle={problem.title} />
           <input
             ref={fileInputRef}
             type="file"
@@ -368,9 +478,23 @@ export function ProblemDetailPage() {
           </p>
         )}
 
-        <CodeEditor language={language} value={code} onChange={setCode} />
+        {/* Remount on problem/language switch so the editor always opens
+            at line 1 with folds cleared instead of inheriting old scroll. */}
+        <CodeEditor key={`${slug}:${language}`} language={language} value={code} onChange={setCode} />
 
-        <div className="lc-console">
+        <div
+          className="lc-splitter lc-splitter--h"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize console panel"
+          tabIndex={0}
+          onPointerDown={onSplitterDown('h')}
+          onPointerMove={onSplitterMove}
+          onPointerUp={endSplitterDrag}
+          onPointerCancel={endSplitterDrag}
+          onKeyDown={onSplitterKeyDown('h')}
+        />
+        <div className="lc-console" style={{ height: consoleH }}>
           <div className="lc-tabs" role="tablist" aria-label="Console">
             <button
               type="button"
