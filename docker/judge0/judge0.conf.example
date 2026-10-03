@@ -1,0 +1,18 @@
+# Template for docker/judge0/judge0.conf (LOCAL DEV ONLY, never committed).
+# Copy to judge0.conf and fill random throwaway values, e.g.:
+#   python -c "import secrets; print(secrets.token_hex(16))"
+# These protect Judge0's own throwaway Redis/Postgres on your laptop.
+# Never reuse them anywhere else (not production, not Render/Neon).
+REDIS_PASSWORD=CHANGE_ME_random_local_only
+POSTGRES_PASSWORD=CHANGE_ME_random_local_only
+
+# Hostnames must match the service names in docker-compose.judge0.yml.
+POSTGRES_HOST=judge0-db
+POSTGRES_DB=judge0
+POSTGRES_USER=judge0
+REDIS_HOST=judge0-redis
+
+# Local POC tweak: allow roomy per-process address-space limits (the stock
+# 512000 KB cap is too small for a JVM, which reserves heap virtually).
+# Hosted/production Judge0 keeps the default (leave unset).
+MAX_MEMORY_LIMIT=8000000
