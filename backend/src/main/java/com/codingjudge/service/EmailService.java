@@ -45,7 +45,7 @@ public class EmailService {
     }
 
     private void sendEmail(String toEmail, String subject, String htmlContent) {
-        System.out.println("[EmailService] Sending email to: " + email + ", subject: " + subject);
+        System.out.println("[EmailService] Sending email to: " + toEmail + ", subject: " + subject);
         
         if (sendGridApiKey == null || sendGridApiKey.isBlank()) {
             System.err.println("[EmailService] WARNING: SendGrid API key not configured, skipping email");
@@ -56,7 +56,7 @@ public class EmailService {
             // Build SendGrid API request
             Map<String, Object> personalization = new HashMap<>();
             Map<String, String> to = new HashMap<>();
-            to.put("email", email);
+            to.put("email", toEmail);
             personalization.put("to", new Object[]{to});
             personalization.put("subject", subject);
 
@@ -81,7 +81,7 @@ public class EmailService {
             String url = "https://api.sendgrid.com/v3/mail/send";
             restTemplate.postForEntity(url, request, String.class);
             
-            System.out.println("[EmailService] Email sent successfully to: " + email);
+            System.out.println("[EmailService] Email sent successfully to: " + toEmail);
         } catch (Exception e) {
             System.err.println("[EmailService] Failed to send email: " + e.getMessage());
             e.printStackTrace();
