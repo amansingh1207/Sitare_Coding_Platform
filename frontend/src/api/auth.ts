@@ -29,6 +29,34 @@ export const authApi = {
     return apiFetch<User>('/auth/me');
   },
 
+  async sendVerificationOtp(email: string): Promise<string> {
+    return apiFetch<string>('/auth/send-verification-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async verifyOtp(email: string, otp: string): Promise<string> {
+    return apiFetch<string>('/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp }),
+    });
+  },
+
+  async sendPasswordResetOtp(email: string): Promise<string> {
+    return apiFetch<string>('/auth/send-password-reset-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async resetPassword(email: string, otp: string, newPassword: string): Promise<string> {
+    return apiFetch<string>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp, newPassword }),
+    });
+  },
+
   logout(): void {
     clearToken();
   },

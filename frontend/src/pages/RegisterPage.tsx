@@ -2,11 +2,9 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authApi } from '../api/auth';
-import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../api/client';
 
 export function RegisterPage() {
-  const { login } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -21,8 +19,7 @@ export function RegisterPage() {
     setSubmitting(true);
     try {
       await authApi.register({ email, username, password, fullName });
-      await login(email, password);
-      navigate('/problems');
+      navigate(`/verify-email?email=${encodeURIComponent(email)}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Registration failed');
     } finally {

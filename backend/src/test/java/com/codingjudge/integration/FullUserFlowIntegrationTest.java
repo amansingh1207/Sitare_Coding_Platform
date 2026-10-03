@@ -487,6 +487,8 @@ class FullUserFlowIntegrationTest {
                                  "fullName":"Test User"}""", email, username)))
                 .andExpect(status().isCreated());
 
+        userRepository.findByEmail(email).ifPresent(u -> { u.setEmailVerified(true); userRepository.save(u); });
+
         MvcResult login = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(String.format("{\"email\":\"%s\",\"password\":\"password123\"}", email)))

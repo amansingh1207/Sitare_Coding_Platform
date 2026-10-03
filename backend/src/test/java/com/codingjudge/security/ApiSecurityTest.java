@@ -264,6 +264,8 @@ class ApiSecurityTest {
                                  "fullName":"Test User"}""", email, username)))
                 .andExpect(status().isCreated());
 
+        userRepository.findByEmail(email).ifPresent(u -> { u.setEmailVerified(true); userRepository.save(u); });
+
         MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(String.format("""

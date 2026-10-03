@@ -38,7 +38,9 @@ public class SecurityConfig {
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/health").permitAll()
-                .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+                .requestMatchers("/api/auth/register", "/api/auth/login",
+                        "/api/auth/send-verification-otp", "/api/auth/verify-otp",
+                        "/api/auth/send-password-reset-otp", "/api/auth/reset-password").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("PROFESSOR")
                 .anyRequest().authenticated()
             )

@@ -5,6 +5,7 @@ import com.codingjudge.model.entity.TestCase;
 import com.codingjudge.model.enums.Difficulty;
 import com.codingjudge.repository.ProblemRepository;
 import com.codingjudge.repository.SubmissionRepository;
+import com.codingjudge.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +42,9 @@ class SubmissionPipelineTest {
 
     @Autowired
     private SubmissionRepository submissionRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     private Long problemId;
     private String tokenA;
@@ -313,6 +317,8 @@ class SubmissionPipelineTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(registerBody))
                 .andExpect(status().isCreated());
+
+        userRepository.findByEmail(email).ifPresent(u -> { u.setEmailVerified(true); userRepository.save(u); });
 
         String loginBody = String.format("""
                 {

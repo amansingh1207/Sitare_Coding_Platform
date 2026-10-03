@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { ProblemListPage } from './pages/ProblemListPage';
 import { ProblemDetailPage } from './pages/ProblemDetailPage';
 import { SubmissionHistoryPage } from './pages/SubmissionHistoryPage';
@@ -86,6 +88,8 @@ function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route
               path="/problems"
               element={

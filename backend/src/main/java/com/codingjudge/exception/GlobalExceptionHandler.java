@@ -70,7 +70,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<?>> handleGeneric(Exception ex) {
+        System.err.println("[GlobalExceptionHandler] Caught exception: " + ex.getClass().getName() + " - " + ex.getMessage());
+        ex.printStackTrace();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.fail("INTERNAL_ERROR", "An unexpected error occurred"));
+                .body(ApiResponse.fail("INTERNAL_ERROR", "An unexpected error occurred: " + ex.getMessage()));
     }
 }

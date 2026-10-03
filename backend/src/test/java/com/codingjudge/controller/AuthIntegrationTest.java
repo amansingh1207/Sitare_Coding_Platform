@@ -215,6 +215,11 @@ class AuthIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isCreated());
+
+        userRepository.findByEmail(email).ifPresent(u -> {
+            u.setEmailVerified(true);
+            userRepository.save(u);
+        });
     }
 
     private String login(String email) throws Exception {

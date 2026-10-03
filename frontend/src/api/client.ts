@@ -34,10 +34,17 @@ async function parseEnvelope<T>(response: Response): Promise<T> {
     throw new ApiError(response.status, 'NETWORK_ERROR', `Request failed with status ${response.status}`);
   }
   if (!response.ok || !envelope.success) {
+    let message = envelope.error?.message ?? `Request failed with status ${response.status}`;
+    const details = envelope.error?.details as Record<string, string> | undefined;
+    if (details && Object.keys(details).length > 0) {
+      message = Object.entries(details)
+        .map(([field, msg]) => `${field}: ${msg}`)
+        .join(', ');
+    }
     throw new ApiError(
       response.status,
       envelope.error?.code ?? 'UNKNOWN_ERROR',
-      envelope.error?.message ?? `Request failed with status ${response.status}`,
+      message,
     );
   }
   return envelope.data as T;
