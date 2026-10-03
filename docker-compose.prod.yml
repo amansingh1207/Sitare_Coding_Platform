@@ -1,0 +1,105 @@
+# Production Docker Compose for CodingJudge
+# Usage: docker compose -f docker-compose.prod.yml up -d
+# Requires: .env.prod file with production values
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: codingjudge-prod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-codingjudge}
+      POSTGRES_USER: ${DB_USER:-codingjudge}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-codingjudge}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - codingjudge-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: codingjudge-prod-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-codingjudge}
+      DB_USER: ${DB_USER:-codingjudge}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      JUDGE_DOCKER_IMAGE: ${JUDGE_DOCKER_IMAGE:-codingjudge/sandbox:latest}
+      JUDGE_TIMEOUT_MS: ${JUDGE_TIMEOUT_MS:-10000}
+      JUDGE_MEMORY_LIMIT_MB: ${JUDGE_MEMORY_LIMIT_MB:-256}
+      JUDGE_CPU_LIMIT: ${JUDGE_CPU_LIMIT:-1.0}
+      JUDGE_MAX_OUTPUT_SIZE_KB: ${JUDGE_MAX_OUTPUT_SIZE_KB:-64}
+      JUDGE_MAX_SOURCE_SIZE_KB: ${JUDGE_MAX_SOURCE_SIZE_KB:-256}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-CodingJudge}
+      SPRING_PROFILES_ACTIVE: prod
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - codingjudge-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: codingjudge-prod-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - codingjudge-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: codingjudge-prod-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - codingjudge-network
+
+  certbot:
+    image: certbot/certbot
+    container_name: codingjudge-certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done'"
+
+networks:
+  codingjudge-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

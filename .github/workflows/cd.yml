@@ -1,0 +1,171 @@
+name: CD - Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  SERVER_IP: ${{ secrets.SERVER_IP }}
+  SSH_USER: ${{ secrets.SSH_USER }}
+
+jobs:
+  test:
+    name: Run Tests
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build Artifacts
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build backend
+        working-directory: ./backend
+        run: mvn -B -ntp package -DskipTests
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: backend/target/codingjudge-backend-0.1.0.jar
+          retention-days: 1
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 1
+
+  deploy:
+    name: Deploy to Production
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download backend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-jar
+          path: backend/target
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Build judge sandbox
+        working-directory: ./docker/sandbox
+        run: docker build -t codingjudge/sandbox:latest .
+
+      - name: Create deployment package
+        run: |
+          tar -czf deploy-package.tar.gz \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='target' \
+            --exclude='.gitignore' \
+            --exclude='*.log' \
+            --exclude='*.txt' \
+            --exclude='*.md' \
+            backend/target/codingjudge-backend-0.1.0.jar \
+            frontend/dist \
+            docker/sandbox/Dockerfile \
+            docker-compose.prod.yml \
+            nginx/ \
+            certbot/
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            mkdir -p /opt/codingjudge
+            cd /opt/codingjudge
+            
+            # Extract deployment package
+            tar -xzf /tmp/deploy-package.tar.gz
+            
+            # Stop existing containers
+            docker compose -f docker-compose.prod.yml down --remove-orphans || true
+            
+            # Pull latest base images
+            docker compose -f docker-compose.prod.yml pull postgres nginx certbot/certbot || true
+            
+            # Build and start services
+            docker compose -f docker-compose.prod.yml up -d --build
+            
+            # Wait for health
+            sleep 30
+            docker compose -f docker-compose.prod.yml ps
+            
+            # Health check
+            for i in {1..10}; do
+              if curl -f http://localhost:8080/api/health >/dev/null 2>&1; then
+                echo "Backend healthy"
+                break
+              fi
+              sleep 5
+            done
+            
+            echo "Deployment complete!"
+        env:
+          DEPLOY_PACKAGE: deploy-package.tar.gz
+      - name: Upload deployment package
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-package
+          path: deploy-package.tar.gz
+          retention-days: 1
+      - name: Transfer deployment package
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: deploy-package.tar.gz
+          target: /tmp/
+      - name: Transfer env file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: .env.prod
+          target: /tmp/
