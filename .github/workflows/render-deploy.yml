@@ -1,0 +1,135 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+  BACKEND_SERVICE_ID: ${{ secrets.RENDER_BACKEND_SERVICE_ID }}
+  FRONTEND_SERVICE_ID: ${{ secrets.RENDER_FRONTEND_SERVICE_ID }}
+
+jobs:
+  deploy-backend:
+    name: Deploy Backend to Render
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trigger Render Backend Deploy
+        run: |
+          curl -X POST "https://api.render.com/v1/services/${{ env.BACKEND_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": "do_not_clear"}'
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          BACKEND_SERVICE_ID: ${{ secrets.RENDER_BACKEND_SERVICE_ID }}
+
+      - name: Wait for Backend Deploy
+        run: |
+          echo "Waiting for backend deploy..."
+          sleep 120
+          for i in {1..20}; do
+            STATUS=$(curl -s -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+              "https://api.render.com/v1/services/${{ env.BACKEND_SERVICE_ID }}" | jq -r '.serviceDetails.status')
+            echo "Backend status: $STATUS"
+            if [[ "$STATUS" == "live" ]]; then
+              echo "Backend deployed successfully!"
+              exit 0
+            elif [[ "$STATUS" == "build_failed" || "$STATUS" == "crashed" ]]; then
+              echo "Backend deploy failed!"
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "Deploy timeout"
+          exit 1
+
+  deploy-frontend:
+    name: Deploy Frontend to Render
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: deploy-backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trigger Render Frontend Deploy
+        run: |
+          curl -X POST "https://api.render.com/v1/services/${{ env.FRONTEND_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": "do_not_clear"}'
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          FRONTEND_SERVICE_ID: ${{ secrets.RENDER_FRONTEND_SERVICE_ID }}
+
+      - name: Wait for Frontend Deploy
+        run: |
+          echo "Waiting for frontend deploy..."
+          sleep 60
+          for i in {1..15}; do
+            STATUS=$(curl -s -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+              "https://api.render.com/v1/services/${{ env.FRONTEND_SERVICE_ID }}" | jq -r '.serviceDetails.status')
+            echo "Frontend status: $STATUS"
+            if [[ "$STATUS" == "live" ]]; then
+              echo "Frontend deployed successfully!"
+              exit 0
+            elif [[ "$STATUS" == "build_failed" || "$STATUS" == "crashed" ]]; then
+              echo "Frontend deploy failed!"
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "Deploy timeout"
+          exit 1
+
+  update-env-vars:
+    name: Sync Environment Variables
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Update Backend Env Vars
+        run: |
+          curl -X PATCH "https://api.render.com/v1/services/${{ env.BACKEND_SERVICE_ID }}/env-vars" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d @- << 'EOF'
+          {
+            "envVars": [
+              {"key": "DB_HOST", "value": "aws-0-us-west-1.pooler.supabase.com"},
+              {"key": "DB_PORT", "value": "6543"},
+              {"key": "DB_NAME", "value": "postgres"},
+              {"key": "DB_USER", "value": "postgres.jqmhbycvcgbraerdystn"},
+              {"key": "DB_PASSWORD", "value": "frfCN5B2N4Pz0Ex1"},
+              {"key": "MAIL_USERNAME", "value": "${{ secrets.MAIL_USERNAME }}"},
+              {"key": "MAIL_PASSWORD", "value": "${{ secrets.MAIL_PASSWORD }}"},
+              {"key": "JWT_SECRET", "value": "${{ secrets.JWT_SECRET }}"},
+              {"key": "SPRING_PROFILES_ACTIVE", "value": "prod"}
+            ]
+          }
+          EOF
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          BACKEND_SERVICE_ID: ${{ secrets.RENDER_BACKEND_SERVICE_ID }}
+
+      - name: Update Frontend Env Vars
+        run: |
+          curl -X PATCH "https://api.render.com/v1/services/${{ env.FRONTEND_SERVICE_ID }}/env-vars" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d @- << 'EOF'
+          {
+            "envVars": [
+              {"key": "VITE_API_BASE_URL", "value": "https://codingjudge-backend.onrender.com/api"}
+            ]
+          }
+          EOF
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          FRONTEND_SERVICE_ID: ${{ secrets.RENDER_FRONTEND_SERVICE_ID }}
