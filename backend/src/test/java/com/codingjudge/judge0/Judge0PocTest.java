@@ -1,5 +1,7 @@
 package com.codingjudge.judge0;
 
+import com.codingjudge.judge.Judge0Client;
+
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -75,7 +77,7 @@ class Judge0PocTest {
         // and a JVM needs gigabytes of virtual headroom just to start.
         // (Server cap raised locally via MAX_MEMORY_LIMIT; stock default is 512 MB.)
         double memoryKb = languageId == pythonId ? 256_000.0 : 6_000_000.0;
-        String token = client.submit(source, languageId, stdin, null, 2.0, memoryKb);
+        String token = client.submit(source, languageId, stdin, null, 2.0, memoryKb, true);
         assertNotNull(token);
         assertTrue(!token.isBlank(), "token must be non-blank");
         return client.waitForTerminal(token, POLL_MS, MAX_WAIT_MS);
@@ -118,7 +120,7 @@ class Judge0PocTest {
 
     @Test
     void tokenPollingReachesTerminalState() {
-        String token = client.submit("print(1)", pythonId, null, null, 2.0, 256_000.0);
+        String token = client.submit("print(1)", pythonId, null, null, 2.0, 256_000.0, true);
         assertTrue(token != null && !token.isBlank());
 
         // Poll manually to observe intermediate queue states.
@@ -170,7 +172,7 @@ class Judge0PocTest {
 
     @Test
     void pythonInfiniteLoopHitsTimeLimit() {
-        String token = client.submit("while True:\n  pass\n", pythonId, null, null, 1.0, 256_000.0);
+        String token = client.submit("while True:\n  pass\n", pythonId, null, null, 1.0, 256_000.0, true);
         Judge0Client.Judge0Result r = client.waitForTerminal(token, POLL_MS, MAX_WAIT_MS);
         assertEquals(Judge0Client.STATUS_TIME_LIMIT_EXCEEDED, r.statusId());
     }
@@ -178,7 +180,7 @@ class Judge0PocTest {
     @Test
     void mismatchedExpectedOutputIsWrongAnswer() {
         String token = client.submit("print('hello')", pythonId, null,
-                "something else", 2.0, 256_000.0);
+                "something else", 2.0, 256_000.0, true);
         Judge0Client.Judge0Result r = client.waitForTerminal(token, POLL_MS, MAX_WAIT_MS);
         assertEquals(Judge0Client.STATUS_WRONG_ANSWER, r.statusId());
     }
@@ -211,7 +213,7 @@ class Judge0PocTest {
         // NOTE: Judge0 caps cpu_time_limit at 15 s (server default), so the
         // sleeper stays under it; the 3 s client budget still expires first.
         String token = client.submit(
-                "import time\ntime.sleep(60)\nprint('done')", pythonId, null, null, 10.0, 256_000.0);
+                "import time\ntime.sleep(60)\nprint('done')", pythonId, null, null, 10.0, 256_000.0, true);
         try {
             client.waitForTerminal(token, 200, 3_000);
         } catch (Judge0Client.Judge0TimeoutException e) {

@@ -1,4 +1,4 @@
-package com.codingjudge.judge0;
+package com.codingjudge.judge;
 
 import org.junit.jupiter.api.Test;
 

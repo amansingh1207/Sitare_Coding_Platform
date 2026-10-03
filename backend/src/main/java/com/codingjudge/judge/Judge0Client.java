@@ -1,4 +1,4 @@
-package com.codingjudge.judge0;
+package com.codingjudge.judge;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -16,11 +16,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Phase 1 proof-of-concept client for the Judge0 code-execution API.
+ * Thin client for the Judge0 code-execution API (promoted from the Phase 1
+ * POC, behavior unchanged).
  *
- * <p>ISOLATED: lives under {@code src/test} and is used only by the Judge0
- * POC tests. It is NOT wired into the submission flow, the Docker judge, or
- * any controller. Production integration (Phase 2) will decide what survives.
+ * <p>Uses only the JDK HTTP client plus the project's Jackson: no new
+ * dependencies. Authentication (if any) travels as {@code X-Auth-Token}, or
+ * as RapidAPI headers when a host is configured. The key is never logged.
  *
  * <p>Protocol (verified against Judge0 CE v1.13.1 docs at ce.judge0.com):
  * <pre>
@@ -45,7 +46,7 @@ public class Judge0Client {
     public static final int STATUS_INTERNAL_ERROR = 13;
 
     private static final String DEFAULT_FIELDS =
-            "stdout,stderr,compile_output,message,status,time,memory,token";
+            "stdout,stderr,compile_output,message,status,time,memory,token,exit_code";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -96,12 +97,23 @@ public class Judge0Client {
     /** Submit source code and return the Judge0 submission token. */
     public String submit(String sourceCode, int languageId, String stdin,
                          Double cpuTimeLimitSec, Double memoryLimitKb) {
-        return submit(sourceCode, languageId, stdin, null, cpuTimeLimitSec, memoryLimitKb);
+        return submit(sourceCode, languageId, stdin, null, cpuTimeLimitSec, memoryLimitKb, false);
     }
 
     /** Submit with an optional expected output (Judge0-side comparison). */
     public String submit(String sourceCode, int languageId, String stdin, String expectedOutput,
                          Double cpuTimeLimitSec, Double memoryLimitKb) {
+        return submit(sourceCode, languageId, stdin, expectedOutput,
+                cpuTimeLimitSec, memoryLimitKb, false);
+    }
+
+    /**
+     * Full submit. {@code perProcessLimits} adds both per-process rlimit flags
+     * (needed only on cgroup-v1-less hosts, see docs/JUDGE0_POC.md);
+     * production submissions leave them absent.
+     */
+    public String submit(String sourceCode, int languageId, String stdin, String expectedOutput,
+                         Double cpuTimeLimitSec, Double memoryLimitKb, boolean perProcessLimits) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("source_code", sourceCode);
         body.put("language_id", languageId);
@@ -117,15 +129,12 @@ public class Judge0Client {
         if (memoryLimitKb != null) {
             body.put("memory_limit", memoryLimitKb);
         }
-        // POC-only deviation (documented in docs/JUDGE0_POC.md): this laptop's
-        // kernel is cgroup-v2-only while Judge0 CE 1.13.1 drives isolate in
-        // cgroup-v1 mode, so every execution dies with Internal Error.
-        // Setting both per-process flags makes Judge0 skip `--cg` entirely
-        // and enforce limits with plain rlimits instead. Verdicts, polling
-        // and the API flow are identical; only cgroup accounting is skipped.
-        // Production (hosted Judge0) uses the defaults.
-        body.put("enable_per_process_and_thread_time_limit", true);
-        body.put("enable_per_process_and_thread_memory_limit", true);
+        // Only set on hosts whose sandbox cannot do cgroup limits (see
+        // docs/JUDGE0_POC.md). Production Judge0 runs with these absent.
+        if (perProcessLimits) {
+            body.put("enable_per_process_and_thread_time_limit", true);
+            body.put("enable_per_process_and_thread_memory_limit", true);
+        }
         HttpResponse<String> response = send("POST",
                 "/submissions?base64_encoded=false&wait=false", body);
         int code = response.statusCode();
@@ -242,6 +251,7 @@ public class Judge0Client {
 
     private Judge0Result toResult(JsonNode node) {
         JsonNode status = node.path("status");
+        JsonNode exitCode = node.path("exit_code");
         return new Judge0Result(
                 text(node, "token"),
                 status.path("id").asInt(-1),
@@ -251,7 +261,8 @@ public class Judge0Client {
                 text(node, "compile_output"),
                 text(node, "message"),
                 number(node, "time"),
-                number(node, "memory"));
+                number(node, "memory"),
+                exitCode.isInt() ? exitCode.asInt() : null);
     }
 
     private static String text(JsonNode node, String field) {
@@ -291,7 +302,8 @@ public class Judge0Client {
             String compileOutput,
             String message,
             Double timeSeconds,
-            Double memoryKilobytes) {
+            Double memoryKilobytes,
+            Integer exitCode) {
     }
 
     public record LanguageInfo(int id, String name, boolean archived) {
