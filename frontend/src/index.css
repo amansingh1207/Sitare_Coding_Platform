@@ -528,7 +528,10 @@ button {
 .lc-console {
   border-top: 1px solid var(--lc-border);
   height: 240px;
-  min-height: 160px;
+  min-height: 140px;
+  /* Never grow over the editor + Run/Submit bar: the actions row must stay
+     visible no matter how far up the console is dragged. */
+  max-height: calc(100% - 250px);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -554,12 +557,81 @@ button {
   display: flex;
   justify-content: flex-end;
   gap: 0.6rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.4rem 0.75rem 0.45rem;
   flex-shrink: 0;
 }
 
 .run-status {
   margin: 0.5rem 0;
+}
+
+/* ---------- LeetCode-style verdict banner ---------- */
+
+.verdict {
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  margin: 0.75rem 0;
+  border-left: 4px solid var(--lc-faint, #999);
+  background: var(--lc-code-bg);
+}
+
+.verdict__title {
+  font-size: 0.8rem;
+  color: var(--lc-muted);
+  margin: 0 0 0.15rem;
+}
+
+.verdict__status {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.verdict__meta {
+  font-size: 0.85rem;
+  color: var(--lc-muted);
+  margin: 0.25rem 0 0;
+}
+
+.verdict__detail {
+  margin-top: 0.5rem;
+}
+
+.verdict--accepted {
+  border-left-color: var(--lc-green, #2cbb5d);
+}
+
+.verdict--accepted .verdict__status {
+  color: var(--lc-green, #2cbb5d);
+}
+
+.verdict--wrong_answer,
+.verdict--runtime_error,
+.verdict--compilation_error,
+.verdict--internal_error {
+  border-left-color: var(--lc-red, #e74c3c);
+}
+
+.verdict--wrong_answer .verdict__status,
+.verdict--runtime_error .verdict__status,
+.verdict--compilation_error .verdict__status,
+.verdict--internal_error .verdict__status {
+  color: var(--lc-red, #e74c3c);
+}
+
+.verdict--time_limit_exceeded,
+.verdict--memory_limit_exceeded {
+  border-left-color: var(--lc-orange, #e67e22);
+}
+
+.verdict--time_limit_exceeded .verdict__status,
+.verdict--memory_limit_exceeded .verdict__status {
+  color: var(--lc-orange, #e67e22);
+}
+
+.verdict--pending .verdict__status,
+.verdict--judging .verdict__status {
+  color: var(--lc-muted);
 }
 
 /* ---------- Test results (console style) ---------- */
@@ -838,9 +910,7 @@ button {
 }
 
 .lc-editor-bar .practice-timer__label {
-  font-size: 0.8rem;
-  font-weight: 400;
-  color: var(--lc-muted);
+  display: none;
 }
 
 .lc-editor-bar .practice-timer__value {

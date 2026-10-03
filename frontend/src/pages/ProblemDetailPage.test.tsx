@@ -169,7 +169,7 @@ describe('ProblemDetailPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit Code' }));
 
-    await waitFor(() => expect(screen.getByText(/Submission #42/)).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText(/Submission #42/).length).toBe(2));
     const urls = calls().map((c) => c.url);
     expect(urls.some((u) => u.endsWith('/submissions') && !u.includes('/run'))).toBe(true);
     expect(urls.some((u) => u.includes('/submissions/42'))).toBe(true);

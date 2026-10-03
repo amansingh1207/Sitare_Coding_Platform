@@ -34,7 +34,7 @@ export function PracticeTimer({ problemTitle }: PracticeTimerProps) {
   };
 
   return (
-    <div className="practice-timer">
+    <div className="practice-timer" title="Practice timer — not submitted, does not affect judging">
       <div className="practice-timer__display">
         <span className="practice-timer__label">Practice time</span>
         <span className="practice-timer__value" data-testid="practice-timer-value">

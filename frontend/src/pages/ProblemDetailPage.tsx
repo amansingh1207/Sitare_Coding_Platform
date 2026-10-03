@@ -7,6 +7,7 @@ import { ApiError } from '../api/client';
 import { CodeEditor } from '../components/CodeEditor';
 import { PracticeTimer } from '../components/PracticeTimer';
 import { TestCaseResults, statusLabel } from '../components/TestCaseResults';
+import { VerdictBanner } from '../components/VerdictBanner';
 import {
   SUPPORTED_LANGUAGES,
   detectLanguageFromFileName,
@@ -569,11 +570,23 @@ export function ProblemDetailPage() {
                     <p className="run-status">
                       Run result: <strong>{statusLabel(runResult.status)}</strong>
                     </p>
+                    <VerdictBanner
+                      status={runResult.status}
+                      results={runResult.testResults}
+                      runtimeMs={runResult.totalRuntimeMs}
+                      detail={runResult.compilationError}
+                    />
                     <TestCaseResults results={runResult.testResults} />
                   </>
                 )}
                 {submission && (
                   <div className="submission-result">
+                    <VerdictBanner
+                      status={submission.status}
+                      results={submission.testResults}
+                      runtimeMs={submission.runtimeMs}
+                      title={`Submission #${submission.id}`}
+                    />
                     <h3>
                       Submission #{submission.id}: {statusLabel(submission.status)}
                     </h3>
