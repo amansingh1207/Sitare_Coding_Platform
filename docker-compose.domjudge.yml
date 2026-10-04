@@ -1,0 +1,74 @@
+# DOMjudge LOCAL POC ONLY - never for production, never on shared hosts.
+# Mirrors https://hub.docker.com/r/domjudge/domserver (pinned 9.0.0).
+# Usage:
+#   1. docker compose -f docker-compose.domjudge.yml up -d domjudge-mariadb
+#   2. docker compose -f docker-compose.domjudge.yml up -d domjudge-server
+#   3. Read the judgehost password from the server logs:
+#      docker logs codingjudge-domserver 2>&1 | grep -i -A2 judgehost
+#   4. DOMJUDGE_JUDGEHOST_PASSWORD=<that> docker compose -f docker-compose.domjudge.yml up -d domjudge-judgehost
+#   5. UI: http://localhost:12345 (admin password in server logs, *.secret files)
+# Passwords below are throwaway LOCAL-DEV values (same practice as the
+# official example). Never reuse them anywhere real.
+services:
+  domjudge-mariadb:
+    image: mariadb:10.11
+    container_name: codingjudge-domjudge-mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DOMJUDGE_MYSQL_ROOT_PASSWORD:-rootpw}
+      MYSQL_USER: ${DOMJUDGE_MYSQL_USER:-domjudge}
+      MYSQL_PASSWORD: ${DOMJUDGE_MYSQL_PASSWORD:-djpw}
+      MYSQL_DATABASE: ${DOMJUDGE_MYSQL_DATABASE:-domjudge}
+    command: --max-connections=1000 --max-allowed-packet=512M --innodb_snapshot_isolation=OFF
+    volumes:
+      - domjudge_mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-uroot", "-prootpw"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: "no"
+
+  domjudge-server:
+    image: domjudge/domserver:9.0.0
+    container_name: codingjudge-domserver
+    depends_on:
+      domjudge-mariadb:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: domjudge-mariadb
+      MYSQL_USER: ${DOMJUDGE_MYSQL_USER:-domjudge}
+      MYSQL_PASSWORD: ${DOMJUDGE_MYSQL_PASSWORD:-djpw}
+      MYSQL_DATABASE: ${DOMJUDGE_MYSQL_DATABASE:-domjudge}
+      MYSQL_ROOT_PASSWORD: ${DOMJUDGE_MYSQL_ROOT_PASSWORD:-rootpw}
+    ports:
+      - "12345:80"
+    volumes:
+      - domjudge_server_etc:/opt/domjudge/domserver/etc
+    restart: "no"
+
+  domjudge-judgehost:
+    image: domjudge/judgehost:9.0.0
+    container_name: codingjudge-judgehost-0
+    depends_on:
+      - domjudge-server
+    privileged: true
+    # Judgehost must see the HOST cgroup hierarchy, else its cgroup setup
+    # fails with "missing cgroup hierarchy prefix" (see container logs).
+    cgroup: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup
+    hostname: judgedaemon-0
+    environment:
+      DAEMON_ID: 0
+      DOMSERVER_BASEURL: http://domjudge-server/
+      JUDGEDAEMON_USERNAME: judgehost
+      # MUST be replaced with the real judgehost password (printed by
+      # domserver on first boot) before starting the judgehost, e.g.:
+      #   DOMJUDGE_JUDGEHOST_PASSWORD=<that> docker compose -f ... up -d domjudge-judgehost
+      # Wrong value = judgehost cannot authenticate (visible in its logs).
+      JUDGEDAEMON_PASSWORD: ${DOMJUDGE_JUDGEHOST_PASSWORD:-changeme}
+    restart: "no"
+
+volumes:
+  domjudge_mariadb_data:
+  domjudge_server_etc:
