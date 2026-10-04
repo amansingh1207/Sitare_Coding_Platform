@@ -80,6 +80,17 @@ HELLO_JAVA = ('public class Main {\n'
               '        System.out.println("Hello world!");\n    }\n}\n')
 HELLO_PY = 'print("Hello world!")\n'
 
+LOAD_SOURCES = {
+    "cpp": ("cpp", "h.cpp",
+            '#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n'
+            '    cout << "Hello world!\\n";\n    return 0;\n}\n', None),
+    "java": ("java", "Main.java",
+             'public class Main {\n'
+             '    public static void main(String[] args) {\n'
+             '        System.out.println("Hello world!");\n    }\n}\n', "Main"),
+    "python3": ("python3", "hello.py", HELLO_PY, "hello.py"),
+}
+
 
 def matrix():
     cases = [
@@ -111,13 +122,20 @@ def matrix():
     return 1 if failed else 0
 
 
-def load(n):
-    print("firing %d concurrent submissions..." % n, flush=True)
+def load(n, lang="cpp"):
+    lang_id, fname, src, entry = LOAD_SOURCES[lang]
+    print("firing %d concurrent %s submissions..." % (n, lang), flush=True)
     t_all = time.time()
 
     def one(_):
         try:
-            sid = submit("cpp", "hello", "h.cpp", HELLO_CPP)
+            body = {"language_id": lang_id, "problem_id": "hello",
+                    "files": [{"filename": "x.zip", "mime": "application/zip",
+                               "data": src_zip(fname, src)}]}
+            if entry:
+                body["entry_point"] = entry
+            _, b = call("POST", "/contests/%s/submissions" % CID, body)
+            sid = b["id"] if isinstance(b, dict) and "id" in b else b
         except Exception as e:
             return {"ok": False, "error": "submit-failed: %r" % e}
         verdict, waited = await_verdict(sid, budget=600)
@@ -146,4 +164,5 @@ if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "matrix"
     if mode == "matrix":
         sys.exit(matrix())
-    sys.exit(load(int(sys.argv[2]) if len(sys.argv) > 2 else 5))
+    lang = os.environ.get("DOMJUDGE_LOAD_LANG", "cpp")
+    sys.exit(load(int(sys.argv[2]) if len(sys.argv) > 2 else 5, lang))
