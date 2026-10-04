@@ -17,52 +17,75 @@ next to `docker` and `judge0`, selected by `EXECUTION_PROVIDER=domjudge`.
 |---|---|---|
 | `DomjudgeExecutionService` | `com.codingjudge.judge` | `implements CodeExecutionService`, active on `execution.provider=domjudge` |
 | `DomjudgeClient` | `com.codingjudge.judge` | Thin CCS REST client (JDK HTTP + Jackson, like `Judge0Client`; no new deps) |
-| `DomjudgeProblemMirror` | `com.codingjudge.service` | Resolve-or-import CodingJudge problem → DOMjudge problem, cached |
+| `DomjudgeProblemMirror` | `com.codingjudge.judge` | Resolve-or-import CodingJudge problem → DOMjudge problem, cached |
 
-Untouched: `JudgeEngine`, `DockerSandbox`, `Judge0ExecutionService`,
+Untouched: `DockerSandbox`, `Judge0ExecutionService`,
 `SubmissionService`, `SubmissionWorker`, controllers, DTOs, entities,
-frontend, schema. `DockerSandbox` keeps `@ConditionalOnProperty(docker,
-matchIfMissing)`; Judge0 keeps its own; only one provider bean is ever
-active (proven pattern, wiring-tested).
+frontend, schema. Touched minimally: `JudgeEngine` (3-line provider-verdict
+branch), `ExecutionResult` (+nullable provider verdict, all factories
+default null), `CodeExecutionService` (+2 default methods, existing impls
+inherit). `DockerSandbox` keeps `@ConditionalOnProperty(docker,
+matchIfMissing)`; Judge0/DOMjudge keep theirs; only one provider bean is
+ever active (proven pattern, wiring-tested).
 
-## 3. Core design decision: submit ONCE, map runs back
+## 3. Core design decision: submit ONCE, map runs back (verified live)
 
 DOMjudge judges a whole submission against a mirrored problem — never one
-call per testcase (that would also spam its DB and break its verdict).
-Per `executeBatch(source, inputs, executor, timeoutMs, memoryLimitMb)` call:
+call per testcase (verified live: per-test stdout is `Serializer\Exclude`d,
+so it is UNAVAILABLE through the API; compiler diagnostics likewise).
+Verdict authority therefore belongs to DOMjudge on this path (our
+comparator is bypassed via provider verdicts in `JudgeEngine`).
+Per `judgeTestCases(problem, requested, source, executor)` call:
 
 1. `mirror.ensure(problem)` → DOMjudge problem id (externalid
-   `codingjudge-<problemId>`; lookup-first so restarts never duplicate;
-   package built in-memory: `problem.yaml` + `domjudge-problem.ini`
-   (timelimit/memory from OUR problem) + `data/sample|secret` from OUR
-   testcases in sortOrder; secret stays server-side, mirroring our model).
+   `cj-<problemId>-<hash8>`; hash covers sorted test data + limits so edits
+   create a new mirror instead of judging stale data; lookup-first so
+   restarts never duplicate; package built in-memory: `problem.yaml` +
+   `domjudge-problem.ini` (timelimit/memory from OUR problem) +
+   `data/sample|secret` from OUR testcases; secret stays server-side).
+   NOTE: the API `id` may differ from the short-name (observed: dashes in
+   short-name yield id `"problem"`); the mirror uses the returned id, never
+   assumes it.
 2. `POST /api/v4/contests/{cid}/submissions` once
-   (`language_id` mapped from OUR `Language`, `entry_point` where required,
-   source as base64 ZIP) with the dedicated **team worker account**.
-3. Poll `GET .../judgements?submission_id=` (existing poll/timeout config
-   shape: `domjudge.poll-ms`, `domjudge.max-wait-ms`) to a terminal
-   judgement; fetch `GET .../runs?judgement_id=` ordered by `ordinal`.
-4. Translate each run → `ExecutionResult` (same list order as `inputs`):
-   - run `correct`/`wrong-answer` → `success(stdout, timeMs, memKb)` and let
-     **OUR `OutputComparator`** decide AC/WA (one verdict semantics across
-     all providers; hidden answers never leave our backend in student
-     responses — DOMjudge must hold them to compare, same trust as our DB).
-   - run `compiler-error` (whole submission) → `compilationError` for every
-     input (engine short-circuits on the first, as today).
-   - run `timelimit` → `timeout()`; run `run-error`/other → `error(stderr,
-     exit)`; infra failure at any step → caught, logged, `error()` per
-     input (terminal verdict, backend never crashes — same containment
-     contract as the Judge0 provider; reads as RUNTIME_ERROR, documented).
-5. `JudgeEngine` loop, persistence, history, banner: byte-for-byte unchanged.
+   (`language_id` resolved live, `entry_point` where required — `Main` for
+   Java, main filename for Python — source as base64 ZIP) with a dedicated
+   service account holding **team+admin** roles (team submits; jury/admin
+   reads runs — the runs endpoint needs jury/judgehost/api-reader).
+3. Poll `GET .../judgements?submission_id=` to a terminal judgement; fetch
+   `GET .../runs?judging_id=` ordered by `ordinal`. NOTE: the query
+   parameter is `judging_id` — the API docs annotation says
+   `judgement_id`, which is silently ignored (returns ALL runs). Verified
+   in `RunController` source and live.
+4. Translate each run → `ExecutionResult` (aligned to requested inputs):
+   - run `correct` → provider-verdict ACCEPTED; run `wrong-answer` →
+     provider-verdict WRONG_ANSWER (actualOutput stays empty: unavailable).
+   - whole-submission `compiler-error` (no runs) → `compilationError` for
+     every input (engine short-circuits on the first, as today; message
+     stays generic — diagnostics are jury-UI-only).
+   - run `timelimit` → `timeout()`; run `run-error`/other → `error()`;
+     infra failure at any step → caught, logged, `error()` per input
+     (terminal verdict, backend never crashes — same containment contract
+     as the Judge0 provider; reads as RUNTIME_ERROR, documented).
+   - run-count mismatch vs mirrored cases → fail loud (all-error), never
+     misassign.
+5. `JudgeEngine` loop, persistence, history, banner: unchanged except a
+   3-line provider-verdict branch. Run-custom (arbitrary stdin) has no
+   DOMjudge equivalent → clear error result (documented limitation).
 
-## 4. Open risk, closed by test (not by assumption)
+## 4. Open risks, closed by test (not by assumption)
 
-Run↔input alignment is by `ordinal`. The mirror builder names files to
-force rank order, but DOMjudge does not contractually guarantee it. Guard:
-an integration test with 3 distinct-output cases (one deliberately WA)
-asserting per-case assignment end-to-end. If DOMjudge ever reorders, that
-test — not students — finds out first. Fallback if flaky: align by
-matching run stdout against our expected outputs via our own comparator.
+(a) Run↔input alignment is by `ordinal`. Guard: integration test with 3
+distinct-output cases (one deliberately WA) asserting exact per-testcase
+id+status mapping. If DOMjudge ever reorders, that test — not students —
+finds out first.
+(b) **Short-circuit judging (RESOLVED):** DOMjudge has a documented
+`lazy_eval_results` config (default `1` = Lazy: stop at the first
+highest-priority failure). Failing submissions then expose fewer runs
+than mirrored cases. Since our engine needs per-test rows, DOMjudge
+hosts used by CodingJudge MUST set `lazy_eval_results = 2` (Full
+judging: all testcases always run) — verified live (TLE + alignment
+guard both green after the change). The count-mismatch tripwire stays
+as defense-in-depth.
 
 ## 5. Configuration (all env, server-side only)
 

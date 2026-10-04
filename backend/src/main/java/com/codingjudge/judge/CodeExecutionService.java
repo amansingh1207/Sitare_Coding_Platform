@@ -1,5 +1,8 @@
 package com.codingjudge.judge;
 
+import com.codingjudge.model.entity.Problem;
+import com.codingjudge.model.entity.TestCase;
+
 import java.util.List;
 
 /**
@@ -25,4 +28,24 @@ public interface CodeExecutionService {
     List<ExecutionResult> executeBatch(String sourceCode, List<String> inputs,
                                        LanguageExecutor executor,
                                        long timeoutMs, int memoryLimitMb);
+
+    /**
+     * Whether this provider judges whole problems natively (DOMjudge) instead
+     * of per-input executions. Default false preserves the per-input path for
+     * Docker and Judge0.
+     */
+    default boolean handlesProblemsNatively() {
+        return false;
+    }
+
+    /**
+     * Judge {@code requested} test cases of {@code problem} in one native
+     * submission, returning one result per requested case, in order. Only
+     * called when {@link #handlesProblemsNatively()} is true.
+     */
+    default List<ExecutionResult> judgeTestCases(Problem problem, List<TestCase> requested,
+                                                String sourceCode,
+                                                LanguageExecutor executor) {
+        throw new UnsupportedOperationException("provider judges per-test inputs only");
+    }
 }

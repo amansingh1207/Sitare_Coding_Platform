@@ -132,15 +132,29 @@ public class JudgeEngine {
 
         // One call per batch; batching granularity is the provider's business
         // (Docker: one container + one compilation, Judge0: one call per test).
-        List<String> inputs = testCases.stream().map(TestCase::getInputData).toList();
-        List<ExecutionResult> execResults = sandbox.executeBatch(
-                sourceCode, inputs, executor, timeoutMs, memoryLimitMb);
+        // Whole-problem providers (DOMjudge) judge the requested cases
+        // natively instead; the loop below stays identical either way.
+        List<ExecutionResult> execResults;
+        if (sandbox.handlesProblemsNatively() && !testCases.isEmpty()) {
+            Problem problem = testCases.get(0).getProblem();
+            execResults = sandbox.judgeTestCases(problem, testCases, sourceCode, executor);
+        } else {
+            List<String> inputs = testCases.stream().map(TestCase::getInputData).toList();
+            execResults = sandbox.executeBatch(
+                    sourceCode, inputs, executor, timeoutMs, memoryLimitMb);
+        }
 
         for (int i = 0; i < testCases.size(); i++) {
             TestCase testCase = testCases.get(i);
             ExecutionResult execResult = execResults.get(i);
 
-            SubmissionStatus testStatus = determineTestStatus(execResult, testCase.getExpectedOutput());
+            // Providers that judge whole submissions themselves (DOMjudge)
+            // attach the final per-test verdict; everyone else goes through
+            // output comparison below. Either way the loop, persistence and
+            // worst-verdict folding stay identical.
+            SubmissionStatus testStatus = execResult.hasProviderVerdict()
+                    ? execResult.providerVerdict()
+                    : determineTestStatus(execResult, testCase.getExpectedOutput());
             outcomes.add(new TestOutcome(
                     testCase,
                     testStatus,

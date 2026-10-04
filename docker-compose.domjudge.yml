@@ -44,13 +44,19 @@ services:
       - "12345:80"
     volumes:
       - domjudge_server_etc:/opt/domjudge/domserver/etc
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/ -o /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
     restart: "no"
 
   domjudge-judgehost:
     image: domjudge/judgehost:9.0.0
     container_name: codingjudge-judgehost-0
     depends_on:
-      - domjudge-server
+      domjudge-server:
+        condition: service_healthy
     privileged: true
     # Judgehost must see the HOST cgroup hierarchy, else its cgroup setup
     # fails with "missing cgroup hierarchy prefix" (see container logs).
