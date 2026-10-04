@@ -73,7 +73,7 @@ class DomjudgeExecutionServiceTest {
         }
 
         @Override
-        public String importProblem(String contest, byte[] packageZip) {
+        public String importProblem(String contest, String zipFilename, byte[] packageZip) {
             return "dom-1";
         }
 

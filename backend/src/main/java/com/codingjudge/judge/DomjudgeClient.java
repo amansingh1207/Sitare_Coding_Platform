@@ -153,11 +153,16 @@ public class DomjudgeClient {
 
     /**
      * Import a problem package ZIP (multipart field <b>zip</b>). Returns the
-     * created problem id (usually the package short-name).
+     * created problem id.
+     *
+     * <p>DOMjudge derives the problem <i>externalid</i> from the ZIP filename,
+     * so callers MUST pass a unique filename per distinct package (we use the
+     * mirror short-name); a fixed name collides on the second import with
+     * {@code problem.externalid: This value is already used.}
      */
-    public String importProblem(String contest, byte[] packageZip) {
+    public String importProblem(String contest, String zipFilename, byte[] packageZip) {
         String boundary = "DomjudgeBoundary" + System.nanoTime();
-        byte[] body = multipart(boundary, "zip", "problem.zip", "application/zip", packageZip);
+        byte[] body = multipart(boundary, "zip", zipFilename, "application/zip", packageZip);
         HttpResponse<String> response = sendMultipart(
                 "/contests/" + contest + "/problems", boundary, body);
         if (response.statusCode() == 401 || response.statusCode() == 403) {

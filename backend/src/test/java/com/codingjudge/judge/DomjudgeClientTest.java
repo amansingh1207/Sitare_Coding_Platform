@@ -165,7 +165,8 @@ class DomjudgeClientTest {
     void importProblemReturnsId() {
         DomjudgeClient client = client(stub(inv -> response(200, "{\"problem_id\": \"cj-3-ab12\"}")));
 
-        assertThat(client.importProblem("demo", new byte[]{1, 2, 3})).isEqualTo("cj-3-ab12");
+        assertThat(client.importProblem("demo", "cj-3-ab12.zip", new byte[]{1, 2, 3}))
+                .isEqualTo("cj-3-ab12");
     }
 
     @Test

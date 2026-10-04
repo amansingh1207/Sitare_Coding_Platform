@@ -25,6 +25,7 @@ class DomjudgeProblemMirrorTest {
     static class FakeClient extends DomjudgeClient {
         final List<DomjudgeClient.ProblemInfo> known = new ArrayList<>();
         final AtomicInteger imports = new AtomicInteger();
+        volatile String lastZipFilename;
 
         FakeClient() {
             super("http://domjudge.invalid", "u", "p");
@@ -36,8 +37,9 @@ class DomjudgeProblemMirrorTest {
         }
 
         @Override
-        public String importProblem(String contest, byte[] packageZip) {
+        public String importProblem(String contest, String zipFilename, byte[] packageZip) {
             imports.incrementAndGet();
+            lastZipFilename = zipFilename;
             return "imported-" + imports.get();
         }
     }
@@ -127,7 +129,7 @@ class DomjudgeProblemMirrorTest {
             int lists;
 
             @Override
-            public List<ProblemInfo> listProblems(String contest) {
+            public List<DomjudgeClient.ProblemInfo> listProblems(String contest) {
                 lists++;
                 return super.listProblems(contest);
             }
@@ -148,5 +150,20 @@ class DomjudgeProblemMirrorTest {
 
         assertThat(ordered).extracting(TestCase::getSample)
                 .containsExactly(true, true, false, false);
+    }
+
+    @Test
+    void importZipFilenameCarriesShortNameForUniqueExternalId() {
+        // DOMjudge derives problem.externalid from the uploaded ZIP filename:
+        // a fixed name collides on the second import. The mirror must send
+        // the short-name as the filename (verified live).
+        FakeClient client = new FakeClient();
+        DomjudgeProblemMirror mirror = new DomjudgeProblemMirror(client, "demo");
+        Problem problem = problem(3L, 1, 1);
+
+        mirror.ensure(problem);
+
+        String expected = "cj-3-" + DomjudgeProblemMirror.contentHash(problem) + ".zip";
+        assertThat(client.lastZipFilename).isEqualTo(expected);
     }
 }
