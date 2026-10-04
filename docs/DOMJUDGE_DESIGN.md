@@ -93,6 +93,13 @@ hosts used by CodingJudge MUST set `lazy_eval_results = 2` (Full
 judging: all testcases always run) — verified live (TLE + alignment
 guard both green after the change). The count-mismatch tripwire stays
 as defense-in-depth.
+(c) **Contest expiry hides judgements (HIT LIVE):** the practice contest
+must stay temporally open — after `contest.endtime` passes, the judgehost
+still judges but the API stops returning judgements (workers then spin to
+`max-wait` timeout). Keep a far-future `endtime` on every DOMjudge host
+(local extended +7d, AWS +30d on 2026-10-04) and re-check before any
+student-facing window. The service account needs team+jury-level roles:
+team alone can submit but `runs` answers 403 (hit live).
 
 ## 5. Configuration (all env, server-side only)
 
