@@ -250,6 +250,8 @@ class DomjudgeExecutionServiceTest {
                 "src", List.of("custom input"), mock(CppExecutor.class), 2000, 256);
 
         assertThat(results).hasSize(1);
+        // Not a program crash: flagged unsupported so callers show guidance.
+        assertThat(results.get(0).isUnsupported()).isTrue();
         assertThat(results.get(0).error()).contains("Custom input");
     }
 }

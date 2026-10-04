@@ -189,8 +189,7 @@ describe('ProblemDetailPage', () => {
     expect(screen.queryByText('Run result:')).toBeNull();
   });
 
-  it('shows compiler diagnostics returned by the judge', async () => {
-    mockFetch.mockResolvedValueOnce(ok(PROBLEM));
+  it('shows compiler diagnostics returned by the judge', async () => {    mockFetch.mockResolvedValueOnce(ok(PROBLEM));
     await renderPage();
 
     mockFetch.mockResolvedValueOnce(
@@ -215,6 +214,51 @@ describe('ProblemDetailPage', () => {
     expect(await screen.findByText('Run result:')).toBeTruthy();
     expect(screen.getAllByText('Compilation Error').length).toBeGreaterThan(0);
     expect(screen.getByText("Main.java:1: error: ';' expected")).toBeTruthy();
+  });
+
+  it('shows guidance instead of Runtime Error when the judge cannot run custom input', async () => {
+    mockFetch.mockResolvedValueOnce(ok(PROBLEM));
+    await renderPage();
+
+    mockFetch.mockResolvedValueOnce(
+      ok({
+        status: 'RUNTIME_ERROR',
+        output: '',
+        error: 'Custom input runs are not supported by the current judge.',
+        exitCode: -1,
+        runtimeMs: 0,
+        memoryUsedKb: 0,
+        unsupported: true,
+      }),
+    );
+    fireEvent.change(screen.getByLabelText('Custom input'), { target: { value: '3 4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Run with Custom Input' }));
+
+    expect(await screen.findByTestId('custom-run-unsupported')).toBeTruthy();
+    expect(screen.queryByText('Runtime Error')).toBeNull();
+    expect(screen.queryByText('(no output)')).toBeNull();
+  });
+
+  it('still renders normal custom-run output when supported', async () => {
+    mockFetch.mockResolvedValueOnce(ok(PROBLEM));
+    await renderPage();
+
+    mockFetch.mockResolvedValueOnce(
+      ok({
+        status: 'ACCEPTED',
+        output: '7',
+        error: null,
+        exitCode: 0,
+        runtimeMs: 42,
+        memoryUsedKb: 1024,
+        unsupported: false,
+      }),
+    );
+    fireEvent.change(screen.getByLabelText('Custom input'), { target: { value: '3 4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Run with Custom Input' }));
+
+    await screen.findByText(/42 ms/);
+    expect(screen.queryByTestId('custom-run-unsupported')).toBeNull();
   });
 
   it('switching language clears stale results without re-running', async () => {

@@ -108,11 +108,15 @@ public class DomjudgeExecutionService implements CodeExecutionService {
                                              LanguageExecutor executor,
                                              long timeoutMs, int memoryLimitMb) {
         // Arbitrary-stdin runs have no DOMjudge equivalent (it judges fixed
-        // test data). Fail loud and clear instead of pretending to run.
+        // test data, and the API never returns program output). Fail loud
+        // and clear as *unsupported* — never as a program crash — so the
+        // frontend can show guidance instead of a Runtime Error.
         List<ExecutionResult> results = new ArrayList<>(inputs.size());
         for (int i = 0; i < inputs.size(); i++) {
-            results.add(ExecutionResult.error(
-                    "Custom input runs need the Docker provider; submit the code instead.", -1));
+            results.add(ExecutionResult.unsupported(
+                    "Custom input runs are not supported by the current judge. "
+                            + "Use \u201cRun Code\u201d for the sample cases or "
+                            + "\u201cSubmit Code\u201d for full judging."));
         }
         return results;
     }

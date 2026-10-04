@@ -18,6 +18,11 @@ public class CustomRunResponse {
     private Integer exitCode;
     private Integer runtimeMs;
     private Integer memoryUsedKb;
+    /**
+     * True when the active judge cannot run custom input at all (e.g. the
+     * DOMjudge provider). The frontend shows guidance instead of a verdict.
+     */
+    private boolean unsupported;
 
     public static CustomRunResponse from(ExecutionResult result, SubmissionStatus status) {
         CustomRunResponse response = new CustomRunResponse();
@@ -27,6 +32,7 @@ public class CustomRunResponse {
         response.exitCode = result.exitCode();
         response.runtimeMs = (int) Math.min(result.runtimeMs(), Integer.MAX_VALUE);
         response.memoryUsedKb = (int) Math.min(result.memoryUsedKb(), Integer.MAX_VALUE);
+        response.unsupported = result.isUnsupported();
         return response;
     }
 
@@ -52,5 +58,9 @@ public class CustomRunResponse {
 
     public Integer getMemoryUsedKb() {
         return memoryUsedKb;
+    }
+
+    public boolean isUnsupported() {
+        return unsupported;
     }
 }

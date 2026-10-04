@@ -543,19 +543,28 @@ export function ProblemDetailPage() {
                 {customState.kind === 'error' && <p className="error">{customState.message}</p>}
                 {customResult && (
                   <div className="custom-run__result">
-                    <p className="run-status">
-                      Result: <strong>{statusLabel(customResult.status)}</strong>
-                      {customResult.runtimeMs !== null && ` · ${customResult.runtimeMs} ms`}
-                    </p>
-                    <div>
-                      <span>Output:</span>
-                      <pre>{customResult.output ? customResult.output : '(no output)'}</pre>
-                    </div>
-                    {customResult.error && (
-                      <div>
-                        <span>Error:</span>
-                        <pre>{customResult.error}</pre>
-                      </div>
+                    {customResult.unsupported ? (
+                      <p className="help-text" data-testid="custom-run-unsupported">
+                        {customResult.error ??
+                          'Custom input runs are not supported by the current judge.'}
+                      </p>
+                    ) : (
+                      <>
+                        <p className="run-status">
+                          Result: <strong>{statusLabel(customResult.status)}</strong>
+                          {customResult.runtimeMs !== null && ` · ${customResult.runtimeMs} ms`}
+                        </p>
+                        <div>
+                          <span>Output:</span>
+                          <pre>{customResult.output ? customResult.output : '(no output)'}</pre>
+                        </div>
+                        {customResult.error && (
+                          <div>
+                            <span>Error:</span>
+                            <pre>{customResult.error}</pre>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}

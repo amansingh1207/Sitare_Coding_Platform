@@ -94,6 +94,8 @@ export interface CustomRunResult {
   exitCode: number | null;
   runtimeMs: number | null;
   memoryUsedKb: number | null;
+  /** True when the active judge cannot run custom input at all. */
+  unsupported: boolean;
 }
 
 export interface RunResult {
