@@ -45,7 +45,10 @@ Per `judgeTestCases(problem, requested, source, executor)` call:
    `data/sample|secret` from OUR testcases; secret stays server-side).
    NOTE: the API `id` may differ from the short-name (observed: dashes in
    short-name yield id `"problem"`); the mirror uses the returned id, never
-   assumes it.
+   assumes it. NOTE 2: DOMjudge derives `problem.externalid` from the
+   uploaded ZIP *filename*, so the import MUST send `<short-name>.zip` —
+   a fixed `problem.zip` collides on the second import with
+   `problem.externalid: This value is already used` (hit live, fixed).
 2. `POST /api/v4/contests/{cid}/submissions` once
    (`language_id` resolved live, `entry_point` where required — `Main` for
    Java, main filename for Python — source as base64 ZIP) with a dedicated
@@ -55,7 +58,11 @@ Per `judgeTestCases(problem, requested, source, executor)` call:
    `GET .../runs?judging_id=` ordered by `ordinal`. NOTE: the query
    parameter is `judging_id` — the API docs annotation says
    `judgement_id`, which is silently ignored (returns ALL runs). Verified
-   in `RunController` source and live.
+   in `RunController` source and live. NOTE 2: the judgement verdict can
+   go terminal while slow runs are still flushing (observed live: TLE
+   verdict with only 1/35 runs visible), so runs are awaited up to 120s
+   until the count matches AND every run has a verdict; only a persistent
+   mismatch fails loud.
 4. Translate each run → `ExecutionResult` (aligned to requested inputs):
    - run `correct` → provider-verdict ACCEPTED; run `wrong-answer` →
      provider-verdict WRONG_ANSWER (actualOutput stays empty: unavailable).
