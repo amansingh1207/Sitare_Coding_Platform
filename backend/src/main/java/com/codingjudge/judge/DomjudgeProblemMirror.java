@@ -61,7 +61,7 @@ public class DomjudgeProblemMirror {
             }
         }
         LOG.info("Importing problem {} as DOMjudge problem {}", problem.getId(), shortName);
-        String created = client.importProblem(contest, buildPackage(problem, shortName));
+        String created = client.importProblem(contest, shortName + ".zip", buildPackage(problem, shortName));
         cache.put(key, created);
         return created;
     }
