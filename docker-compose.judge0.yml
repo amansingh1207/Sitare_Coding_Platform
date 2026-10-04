@@ -1,0 +1,45 @@
+# Standalone local Judge0 CE for the Phase 1 proof-of-concept.
+# ISOLATED: not referenced by docker-compose.yml, the backend, or the frontend.
+# Usage: docker compose -f docker-compose.judge0.yml up -d
+# API then listens on http://localhost:2358 (no auth by default).
+services:
+  judge0-server:
+    image: judge0/judge0:latest
+    container_name: codingjudge-judge0-server
+    volumes:
+      - ./docker/judge0/judge0.conf:/judge0.conf:ro
+    ports:
+      - "2358:2358"
+    privileged: true
+    restart: "no"
+
+  judge0-worker:
+    image: judge0/judge0:latest
+    container_name: codingjudge-judge0-worker
+    command: ["./scripts/workers"]
+    volumes:
+      - ./docker/judge0/judge0.conf:/judge0.conf:ro
+    privileged: true
+    restart: "no"
+
+  judge0-db:
+    image: postgres:16.2
+    container_name: codingjudge-judge0-db
+    env_file: ./docker/judge0/judge0.conf
+    volumes:
+      - judge0_data:/var/lib/postgresql/data/
+    restart: "no"
+
+  judge0-redis:
+    image: redis:7-alpine
+    container_name: codingjudge-judge0-redis
+    # NOTE: entrypoint (not command) is overridden on purpose: with `command`
+    # the image ENTRYPOINT prepends itself and the quoting breaks on this
+    # setup. `$$` survives compose interpolation so container bash expands
+    # $REDIS_PASSWORD from env_file at runtime.
+    entrypoint: ["sh", "-c", "docker-entrypoint.sh --appendonly no --requirepass $$REDIS_PASSWORD"]
+    env_file: ./docker/judge0/judge0.conf
+    restart: "no"
+
+volumes:
+  judge0_data:

@@ -1,0 +1,63 @@
+# AWS POC compose for DOMjudge 9.0.0 on t3.micro (1 GiB RAM) — see docs/DOMJUDGE_POC.md.
+# Smallest-safe-change tunings vs official defaults (all documented here):
+#  - FPM_MAX_CHILDREN=5 (default 40: 40 PHP children do not fit 1 GiB)
+#  - FPM_MEMORY_LIMIT=256M (default 2G: caps worst-case PHP RSS per child)
+# MariaDB credentials below are THROWAWAY POC values (same practice as the
+# official example). Never reuse them anywhere real.
+services:
+  domjudge-mariadb:
+    image: mariadb:11
+    container_name: dj-mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_USER: domjudge
+      MYSQL_PASSWORD: djpw
+      MYSQL_DATABASE: domjudge
+    command: --max-connections=100 --max-allowed-packet=512M --innodb_snapshot_isolation=OFF --innodb-buffer-pool-size=128M
+    volumes:
+      - dj_mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-uroot", "-prootpw"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: "no"
+
+  domjudge-server:
+    image: domjudge/domserver:9.0.0
+    container_name: dj-domserver
+    depends_on:
+      domjudge-mariadb:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: domjudge-mariadb
+      MYSQL_USER: domjudge
+      MYSQL_PASSWORD: djpw
+      MYSQL_DATABASE: domjudge
+      MYSQL_ROOT_PASSWORD: rootpw
+      FPM_MAX_CHILDREN: 5
+      FPM_MEMORY_LIMIT: 256M
+    ports:
+      - "127.0.0.1:12345:80"
+    restart: "no"
+
+  domjudge-judgehost:
+    image: domjudge/judgehost:9.0.0
+    container_name: dj-judgehost-0
+    depends_on:
+      - domjudge-server
+    privileged: true
+    # Judgehost must see the HOST cgroup hierarchy.
+    cgroup: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup
+    hostname: judgedaemon-0
+    environment:
+      DAEMON_ID: 0
+      DOMSERVER_BASEURL: http://domjudge-server/
+      JUDGEDAEMON_USERNAME: judgehost
+      JUDGEDAEMON_PASSWORD: ${DOMJUDGE_JUDGEHOST_PASSWORD:-changeme}
+    restart: "no"
+
+volumes:
+  dj_mariadb_data:

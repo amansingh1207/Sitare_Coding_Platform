@@ -60,3 +60,4 @@ compile_output*.txt
 test_output*.txt
 structure.txt
 backend/META-INF/
+docker/judge0/judge0.conf

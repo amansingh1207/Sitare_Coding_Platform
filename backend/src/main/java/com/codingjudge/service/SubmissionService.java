@@ -22,6 +22,8 @@ import com.codingjudge.repository.ProblemRepository;
 import com.codingjudge.repository.SubmissionRepository;
 import com.codingjudge.repository.SubmissionTestResultRepository;
 import com.codingjudge.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -29,10 +31,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Instant;
 import java.util.List;
 
 @Service
 public class SubmissionService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SubmissionService.class);
 
     private final SubmissionRepository submissionRepository;
     private final SubmissionTestResultRepository testResultRepository;
@@ -40,19 +45,22 @@ public class SubmissionService {
     private final ProblemRepository problemRepository;
     private final JudgeEngine judgeEngine;
     private final int maxSourceSizeKb;
+    private final boolean workerEnabled;
 
     public SubmissionService(SubmissionRepository submissionRepository,
                              SubmissionTestResultRepository testResultRepository,
                              UserRepository userRepository,
                              ProblemRepository problemRepository,
                              JudgeEngine judgeEngine,
-                             @Value("${judge.max-source-size-kb:256}") int maxSourceSizeKb) {
+                             @Value("${judge.max-source-size-kb:256}") int maxSourceSizeKb,
+                             @Value("${judge.worker.enabled:true}") boolean workerEnabled) {
         this.submissionRepository = submissionRepository;
         this.testResultRepository = testResultRepository;
         this.userRepository = userRepository;
         this.problemRepository = problemRepository;
         this.judgeEngine = judgeEngine;
         this.maxSourceSizeKb = maxSourceSizeKb;
+        this.workerEnabled = workerEnabled;
     }
 
     @Transactional
@@ -72,12 +80,59 @@ public class SubmissionService {
         submission.setStatus(SubmissionStatus.PENDING);
 
         submission = submissionRepository.save(submission);
-        
-        // Judge the submission
-        submission = judgeEngine.judge(submission);
-        submissionRepository.save(submission);
 
+        if (!workerEnabled) {
+            // Synchronous legacy path (tests + kill-switch): judge inline,
+            // exactly as before the queue existed.
+            submission = judgeEngine.judge(submission);
+            submissionRepository.save(submission);
+            return SubmissionRefResponse.from(submission);
+        }
+
+        // Queued path: the background worker claims PENDING rows, judges
+        // them and persists terminal verdicts. The 202 response carries the
+        // id; clients poll GET /api/submissions/{id} (unchanged contract).
         return SubmissionRefResponse.from(submission);
+    }
+
+    /**
+     * Judge one queued submission on a worker thread, in its own transaction.
+     *
+     * <p>The atomic claim is what prevents duplicate processing: exactly one
+     * worker flips a row from PENDING to JUDGING. Every path below ends with
+     * the row terminal (or untouched when already claimed), so no submission
+     * stays queued forever short of a JVM death — and that is repaired by
+     * startup recovery.
+     */
+    @Transactional
+    public void judgeQueued(Long submissionId) {
+        int claimed = submissionRepository.claimQueued(
+                submissionId, SubmissionStatus.PENDING, SubmissionStatus.JUDGING);
+        if (claimed == 0) {
+            return;
+        }
+        try {
+            Submission submission = submissionRepository.findById(submissionId)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Claimed submission vanished: " + submissionId));
+            submission = judgeEngine.judge(submission);
+            submissionRepository.save(submission);
+        } catch (Throwable t) {
+            LOG.error("Queued judging failed for submission {}, marking INTERNAL_ERROR",
+                    submissionId, t);
+            try {
+                Submission failed = submissionRepository.findById(submissionId)
+                        .orElse(null);
+                if (failed != null) {
+                    failed.setStatus(SubmissionStatus.INTERNAL_ERROR);
+                    failed.setJudgedAt(Instant.now());
+                    submissionRepository.save(failed);
+                }
+            } catch (RuntimeException inner) {
+                LOG.error("Could not persist INTERNAL_ERROR for submission {}",
+                        submissionId, inner);
+            }
+        }
     }
 
     /**
