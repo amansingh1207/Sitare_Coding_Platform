@@ -47,6 +47,7 @@ public class DomjudgeExecutionService implements CodeExecutionService {
     private final String contest;
     private final long pollIntervalMs;
     private final long maxWaitMs;
+    private final long runsWaitMs;
 
     /** Resolved once, then cached: language ids are stable per DOMjudge host. */
     private final Map<Language, String> languageIds = new ConcurrentHashMap<>();
@@ -77,16 +78,24 @@ public class DomjudgeExecutionService implements CodeExecutionService {
         this.contest = contest;
         this.pollIntervalMs = pollIntervalMs;
         this.maxWaitMs = maxWaitMs;
+        this.runsWaitMs = 120_000;
     }
 
     /** Test-only seam. */
     DomjudgeExecutionService(DomjudgeClient client, DomjudgeProblemMirror mirror, String contest,
                              long pollIntervalMs, long maxWaitMs) {
+        this(client, mirror, contest, pollIntervalMs, maxWaitMs, 120_000);
+    }
+
+    /** Test-only seam with an explicit runs-flush wait. */
+    DomjudgeExecutionService(DomjudgeClient client, DomjudgeProblemMirror mirror, String contest,
+                             long pollIntervalMs, long maxWaitMs, long runsWaitMs) {
         this.client = client;
         this.mirror = mirror;
         this.contest = contest;
         this.pollIntervalMs = pollIntervalMs;
         this.maxWaitMs = maxWaitMs;
+        this.runsWaitMs = runsWaitMs;
     }
 
     @Override
@@ -185,20 +194,24 @@ public class DomjudgeExecutionService implements CodeExecutionService {
             // The compiler message itself is jury-only in DOMjudge.
             return compilationErrorAll(requested.size());
         }
-        // Runs flush a shade after the judgement row turns terminal; wait
-        // briefly rather than failing on a transient short list.
+        // Runs can lag the judgement row: DOMjudge may publish the overall
+        // verdict while individual runs (especially slow ones like TLE, ~2s
+        // each over dozens of cases) are still flushing — observed live with
+        // the verdict present but only 1/35 runs visible. Wait patiently
+        // rather than failing on a transient short list.
         List<DomjudgeClient.RunResult> runs = List.of();
-        long deadline = System.currentTimeMillis() + 15_000;
+        long deadline = System.currentTimeMillis() + runsWaitMs;
         while (true) {
             runs = client.listRuns(contest, judgement.path("id").asText(""));
-            if (runs.size() == full.size()) {
+            if (runs.size() == full.size() && runs.stream()
+                    .allMatch(run -> run.judgementTypeId() != null)) {
                 break;
             }
             if (System.currentTimeMillis() >= deadline) {
                 break;
             }
             try {
-                Thread.sleep(500);
+                Thread.sleep(1000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;

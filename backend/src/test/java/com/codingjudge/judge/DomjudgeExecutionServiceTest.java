@@ -40,6 +40,8 @@ class DomjudgeExecutionServiceTest {
     static class FakeClient extends DomjudgeClient {
         String judgement = "{\"id\": \"1\", \"judgement_type_id\": \"AC\"}";
         List<RunResult> runs = List.of();
+        /** When non-empty, each listRuns call consumes the head (slow-flush scripts). */
+        final java.util.Queue<List<RunResult>> runsScript = new java.util.ArrayDeque<>();
         int submits;
 
         FakeClient() {
@@ -61,7 +63,8 @@ class DomjudgeExecutionServiceTest {
 
         @Override
         public List<RunResult> listRuns(String contest, String judgementId) {
-            return runs;
+            List<RunResult> next = runsScript.poll();
+            return next != null ? next : runs;
         }
 
         @Override
@@ -188,13 +191,36 @@ class DomjudgeExecutionServiceTest {
         FakeClient client = new FakeClient();
         client.runs = List.of(run(0, "AC", 0.01));
         Problem problem = problem();
+        DomjudgeExecutionService service = new DomjudgeExecutionService(client,
+                new DomjudgeProblemMirror(client, "demo"), "demo", 10, 5000, 50);
 
-        List<ExecutionResult> results = service(client).judgeTestCases(
+        List<ExecutionResult> results = service.judgeTestCases(
                 problem, new ArrayList<>(problem.getTestCases()), "src", mock(CppExecutor.class));
 
         assertThat(results).hasSize(3);
         assertThat(results).allMatch(r -> !r.hasProviderVerdict());
         assertThat(results.get(0).error()).contains("mismatch");
+    }
+
+    @Test
+    void slowFlushingRunsAreAwaitedNotFailed() {
+        // Live DOMjudge publishes the overall verdict while slow runs (TLE)
+        // are still flushing: first only 1/3 runs visible, then all three.
+        // The service must wait and map correctly instead of mismatching.
+        FakeClient client = new FakeClient();
+        client.judgement = "{\"id\": \"1\", \"judgement_type_id\": \"TLE\"}";
+        client.runsScript.add(List.of(run(0, "TLE", 2.0)));
+        client.runsScript.add(List.of(run(0, "TLE", 2.0), run(1, "TLE", 2.0)));
+        client.runs = List.of(run(0, "TLE", 2.0), run(1, "TLE", 2.0), run(2, "TLE", 2.0));
+        Problem problem = problem();
+        DomjudgeExecutionService service = new DomjudgeExecutionService(client,
+                new DomjudgeProblemMirror(client, "demo"), "demo", 10, 5000, 5000);
+
+        List<ExecutionResult> results = service.judgeTestCases(
+                problem, new ArrayList<>(problem.getTestCases()), "src", mock(CppExecutor.class));
+
+        assertThat(results).hasSize(3);
+        assertThat(results).allMatch(ExecutionResult::isTimedOut);
     }
 
     @Test
