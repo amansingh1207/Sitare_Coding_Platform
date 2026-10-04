@@ -43,15 +43,29 @@ CodingJudge solves this by providing:
                                             │
                                    ┌────────▼─────────┐
                                    │   PostgreSQL DB  │
-                                   └──────────────────┘
+                                   │ (Neon, managed)  │
+                                   └────────┬─────────┘
                                             │
                                    ┌────────▼─────────┐
-                                   │   Judge Worker   │
-                                   │  (Docker exec)   │
-                                   └──────────────────┘
+                                   │ DB-backed worker │
+                                   │ queue (PENDING → │
+                                   │ JUDGING → verdict)│
+                                   └────────┬─────────┘
+                                            │
+                        ┌───────────────────┼───────────────────┐
+                        │                   │                   │
+               ┌────────▼─────────┐ ┌───────▼────────┐ ┌───────▼────────┐
+               │ Docker sandbox   │ │ Judge0 (aband.)│ │ DOMjudge (AWS) │
+               │ (local judges)   │ │ (not used)     │ │ (staging judge)│
+               └──────────────────┘ └────────────────┘ └────────────────┘
 ```
 
-**Modular Monolith**: A single Spring Boot backend serves the REST API and orchestrates the judge. The judge executes student code inside isolated Docker containers.
+**Modular Monolith**: A single Spring Boot backend serves the REST API and
+orchestrates judging. Submissions are saved as `PENDING`, claimed atomically
+by a bounded worker pool (`PENDING → JUDGING → terminal verdict`), and judged
+through a `CodeExecutionService` provider abstraction — Docker sandbox locally,
+DOMjudge on AWS for staging. The frontend polls `GET /api/submissions/{id}`
+until the verdict is terminal.
 
 ---
 
@@ -61,9 +75,12 @@ CodingJudge solves this by providing:
 |-------|-----------|
 | Frontend | React 18, TypeScript, Vite |
 | Backend | Spring Boot 3, Java 17 |
-| Database | PostgreSQL 16 |
-| Judge | Docker-based sandboxed execution |
-| Auth | JWT (JSON Web Tokens) |
+| Database | PostgreSQL (Neon managed, Flyway migrations) |
+| Local judge | Docker-based sandboxed execution |
+| Staging judge | DOMjudge 9 on AWS EC2 (Sydney) behind Caddy + Let's Encrypt IP certificate |
+| Auth | JWT (JSON Web Tokens) + email OTP |
+| Email | SendGrid |
+| Backend hosting | Render |
 
 ---
 
@@ -187,28 +204,31 @@ Student submits code
 Spring Boot API creates Submission record (status PENDING)
        │
        ▼
-Docker container is created with resource limits
+DB-backed worker queue claims it (PENDING → JUDGING, bounded pool)
        │
        ▼
-Code is compiled (if needed) inside the container
+JudgeEngine routes to the configured provider
+(Docker sandbox locally, DOMjudge submission on staging)
        │
        ▼
-Compiled program is executed against each test case
+Code is compiled (if needed) and executed against each test case
        │
        ▼
 Output is compared with expected output
+(DOMjudge path: DOMjudge itself is the verdict authority)
        │
        ▼
 Verdict is determined and persisted
        │
        ▼
-Frontend displays the result
+Frontend (polling) displays the result
 ```
 
-Judging happens **synchronously** inside the request that submitted the code,
-so the response already carries a final verdict. This keeps the architecture
-simple; [ARCHITECTURE.md](docs/ARCHITECTURE.md) section 8 records how the judge
-would be extracted to a queue-backed worker if volume grows.
+Judging happens **asynchronously** through the worker queue: the submit
+response carries the new submission id, and the frontend polls
+`GET /api/submissions/{id}` until the status leaves `PENDING`/`JUDGING`.
+Bursts queue up instead of crashing the server; the pool is bounded
+(2–4 workers, no Redis/RabbitMQ by design).
 
 "Run Code" takes a separate path: it executes only the visible sample test cases
 and creates no submission record, so iterating in the editor neither reveals
@@ -216,13 +236,18 @@ hidden tests nor pollutes history.
 
 ### Sandbox Security
 
-Each Docker container:
+Each Docker container (local judge path):
 - Has **no network access**
 - Has **limited memory** (default 256 MB)
 - Has **limited CPU** (default 1 core)
 - Has a **read-only filesystem** (except `/workspace` and `/tmp`)
 - Is **destroyed** after execution
 - Has **no access** to the Docker socket or host resources
+
+On the DOMjudge path, student code runs inside DOMjudge judgehosts
+(Docker-isolated chroots on the AWS box) under the same never-on-host
+guarantee, and hidden test data never leaves the server: submission detail
+responses carry sample cases only.
 
 ---
 
@@ -236,7 +261,12 @@ Detailed documentation is in the `docs/` directory:
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture |
 | [DATABASE.md](docs/DATABASE.md) | Database schema design |
 | [API_SPEC.md](docs/API_SPEC.md) | REST API specification |
-| [JUDGE_DESIGN.md](docs/JUDGE_DESIGN.md) | Judge engine design |
+| [JUDGE_DESIGN.md](docs/JUDGE_DESIGN.md) | Judge engine design (Docker path) |
+| [DOMJUDGE_DESIGN.md](docs/DOMJUDGE_DESIGN.md) | DOMjudge integration design |
+| [DOMJUDGE_AWS.md](docs/DOMJUDGE_AWS.md) | AWS judge host evidence |
+| [DOMJUDGE_POC.md](docs/DOMJUDGE_POC.md) | DOMjudge proof-of-concept record |
+| [JUDGE0.md](docs/JUDGE0.md) | Judge0 evaluation (abandoned, kept for record) |
+| [JUDGE0_POC.md](docs/JUDGE0_POC.md) | Judge0 proof-of-concept record |
 | [SECURITY.md](docs/SECURITY.md) | Security requirements |
 | [DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) | Phased implementation plan |
 
@@ -247,17 +277,36 @@ Detailed documentation is in the `docs/` directory:
 All sixteen planned phases are complete. The platform supports registration and
 JWT login, problem browsing with search and filters, an editor for Java, C++ and
 Python, sample-test runs, judged submissions, submission history and a practice
-timer.
+timer. On top of that: a DB-backed worker queue, a DOMjudge execution provider
+(staged end-to-end on AWS), and production hosting on Render + Neon.
 
 | Area | Coverage |
 |------|----------|
-| Backend tests | 111 passing |
-| Frontend tests | 82 passing (API client, utilities, and DOM-level component and page tests) |
-| Live judge verification | All 7 verdicts, all 3 languages |
+| Backend tests | 177 passing (JUnit, incl. judge provider + queue + security suites) |
+| Frontend tests | 96 passing across 12 files (API client, utilities, DOM-level component and page tests) |
+| Live judge verification | All 7 verdicts, all 3 languages (local Docker + AWS DOMjudge), burst-tested |
 
 See [DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) for the per-phase record,
 including what each phase actually changed and the issues found along the way.
 Known limitations are listed in [SECURITY.md](docs/SECURITY.md) section 11.
+
+---
+
+## Production Deployment
+
+| Piece | Where | Notes |
+|-------|-------|-------|
+| Backend | Render (`sitare-coding-platform.onrender.com`) | `server.address=0.0.0.0`, honors `PORT`; health at `/api/health` |
+| Frontend | Render static site | `VITE_API_BASE_URL` is baked at build time — redeploy after changing it |
+| Database | Neon PostgreSQL (managed) | Flyway migrations run on boot |
+| Staging judge | AWS EC2 `ap-southeast-2` (t3.micro) | DOMjudge 9 (domserver + judgehost + MariaDB), tuned for 1 GiB RAM |
+| Judge HTTPS | Caddy on the EC2 box | Let's Encrypt IP certificate, auto-renew via systemd + deploy hook |
+| Email | SendGrid | OTP + password reset |
+
+Rules that stay in force: production default is `EXECUTION_PROVIDER=docker`
+(switch only with explicit approval); the judge port is never exposed
+publicly — traffic goes through Caddy; no secrets are committed (`.env`
+files are gitignored, CI/CD uses secret stores).
 
 ---
 
