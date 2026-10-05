@@ -22,13 +22,16 @@ import com.codingjudge.repository.ProblemRepository;
 import com.codingjudge.repository.SubmissionRepository;
 import com.codingjudge.repository.SubmissionTestResultRepository;
 import com.codingjudge.repository.UserRepository;
+import org.hibernate.Hibernate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
@@ -46,12 +49,19 @@ public class SubmissionService {
     private final JudgeEngine judgeEngine;
     private final int maxSourceSizeKb;
     private final boolean workerEnabled;
+    /**
+     * Programmatic transactions for the judging worker: each phase gets its
+     * own short transaction (field injection avoids the self-invocation trap
+     * of @Transactional methods calling each other on the same bean).
+     */
+    private final TransactionTemplate txTemplate;
 
     public SubmissionService(SubmissionRepository submissionRepository,
                              SubmissionTestResultRepository testResultRepository,
                              UserRepository userRepository,
                              ProblemRepository problemRepository,
                              JudgeEngine judgeEngine,
+                             PlatformTransactionManager transactionManager,
                              @Value("${judge.max-source-size-kb:256}") int maxSourceSizeKb,
                              @Value("${judge.worker.enabled:true}") boolean workerEnabled) {
         this.submissionRepository = submissionRepository;
@@ -59,6 +69,7 @@ public class SubmissionService {
         this.userRepository = userRepository;
         this.problemRepository = problemRepository;
         this.judgeEngine = judgeEngine;
+        this.txTemplate = new TransactionTemplate(transactionManager);
         this.maxSourceSizeKb = maxSourceSizeKb;
         this.workerEnabled = workerEnabled;
     }
@@ -96,31 +107,48 @@ public class SubmissionService {
     }
 
     /**
-     * Judge one queued submission on a worker thread, in its own transaction.
+     * Judge one queued submission on a worker thread.
      *
-     * <p>The atomic claim is what prevents duplicate processing: exactly one
-     * worker flips a row from PENDING to JUDGING. Every path below ends with
-     * the row terminal (or untouched when already claimed), so no submission
-     * stays queued forever short of a JVM death — and that is repaired by
-     * startup recovery.
+     * <p>Deliberately NOT one big transaction: judging waits on the provider
+     * (up to ~120s on DOMjudge, up to ~90s on hosted custom-run backends)
+     * and must never hold a pool connection while doing so — that starved
+     * the pool (total=10, active=10, waiting=21) and broke even login under
+     * burst load. Instead each phase below runs in its own short
+     * transaction: atomic claim, detached load, judge with no connection
+     * held, then persist. The atomic claim still guarantees exactly-once
+     * processing, and startup recovery still repairs rows stranded in
+     * JUDGING by a JVM death.
      */
-    @Transactional
     public void judgeQueued(Long submissionId) {
-        int claimed = submissionRepository.claimQueued(
-                submissionId, SubmissionStatus.PENDING, SubmissionStatus.JUDGING);
-        if (claimed == 0) {
+        Boolean claimed = txTemplate.execute(status -> submissionRepository.claimQueued(
+                submissionId, SubmissionStatus.PENDING, SubmissionStatus.JUDGING) == 1);
+        if (!Boolean.TRUE.equals(claimed)) {
             return;
         }
         try {
-            Submission submission = submissionRepository.findById(submissionId)
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Claimed submission vanished: " + submissionId));
-            submission = judgeEngine.judge(submission);
-            submissionRepository.save(submission);
+            Submission detached = txTemplate.execute(status -> {
+                Submission submission = submissionRepository.findById(submissionId)
+                        .orElseThrow(() -> new IllegalStateException(
+                                "Claimed submission vanished: " + submissionId));
+                Hibernate.initialize(submission.getProblem());
+                Hibernate.initialize(submission.getProblem().getTestCases());
+                return submission;
+            });
+            Submission judged = judgeEngine.judge(detached);
+            txTemplate.execute(status -> {
+                submissionRepository.save(judged);
+                return null;
+            });
         } catch (Throwable t) {
             LOG.error("Queued judging failed for submission {}, marking INTERNAL_ERROR",
                     submissionId, t);
-            try {
+            markInternalError(submissionId);
+        }
+    }
+
+    private void markInternalError(Long submissionId) {
+        try {
+            txTemplate.execute(status -> {
                 Submission failed = submissionRepository.findById(submissionId)
                         .orElse(null);
                 if (failed != null) {
@@ -128,10 +156,11 @@ public class SubmissionService {
                     failed.setJudgedAt(Instant.now());
                     submissionRepository.save(failed);
                 }
-            } catch (RuntimeException inner) {
-                LOG.error("Could not persist INTERNAL_ERROR for submission {}",
-                        submissionId, inner);
-            }
+                return null;
+            });
+        } catch (RuntimeException inner) {
+            LOG.error("Could not persist INTERNAL_ERROR for submission {}",
+                    submissionId, inner);
         }
     }
 
@@ -140,11 +169,14 @@ public class SubmissionService {
      *
      * Nothing is persisted, so this cannot pollute submission history, and only
      * sample test cases are executed, so hidden ones stay unreachable.
+     *
+     * <p>Deliberately NOT transactional: judging waits on the provider and must
+     * never hold a pool connection while doing so. Test cases are loaded
+     * eagerly up front, so no lazy access happens during the wait.
      */
-    @Transactional(readOnly = true)
     public RunResultResponse run(String email, SubmitRequest request) {
         requireUser(email);
-        Problem problem = problemRepository.findById(request.getProblemId())
+        Problem problem = problemRepository.findWithTestCasesById(request.getProblemId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Problem not found: " + request.getProblemId()));
         Language language = parseLanguage(request.getLanguage());
@@ -159,8 +191,10 @@ public class SubmissionService {
      *
      * Nothing is persisted and no test case data is involved, so there is
      * nothing hidden to leak; any authenticated user may use it.
+     *
+     * <p>Deliberately NOT transactional: the hosted custom-run call waits on
+     * the network and must never hold a pool connection while doing so.
      */
-    @Transactional(readOnly = true)
     public CustomRunResponse runCustom(String email, CustomRunRequest request) {
         requireUser(email);
         Problem problem = problemRepository.findById(request.getProblemId())
