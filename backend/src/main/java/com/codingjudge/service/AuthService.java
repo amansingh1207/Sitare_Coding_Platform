@@ -142,9 +142,10 @@ public class AuthService {
         enforceOtpRateLimit(normalizedEmail);
         System.out.println("[AuthService] Rate limit check passed");
 
-        // Generate cryptographically secure 6-digit numeric OTP
+        // Generate cryptographically secure 6-digit numeric OTP.
+        // Never printed: logs are visible to operators and would bypass
+        // email verification for anyone who can read them.
         String otp = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
-        System.out.println("[AuthService] Generated OTP: " + otp);
 
         // Store OTP verification state
         String otpKey = normalizedEmail + ":verify";
@@ -233,9 +234,9 @@ public class AuthService {
 
         enforceOtpRateLimit(normalizedEmail);
 
-        // Generate OTP for password reset
+        // Generate OTP for password reset (never logged: see above).
         String otp = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
-        System.out.println("[AuthService] sendPasswordResetOtp called for: " + normalizedEmail + ", OTP: " + otp);
+        System.out.println("[AuthService] sendPasswordResetOtp called for: " + normalizedEmail);
 
         // Store OTP verification state
         String otpKey = "reset:" + normalizedEmail + ":otp";
