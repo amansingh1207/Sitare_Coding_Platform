@@ -32,13 +32,14 @@ public class JudgeEngine {
     private final CppExecutor cppExecutor;
     private final PythonExecutor pythonExecutor;
     /**
-     * Optional custom-input runners (Wandbox, Piston). Null unless the matching
+     * Optional custom-input runners (TIO, Wandbox, Piston). Null unless the matching
      * {@code judge.customrun.provider} value created the bean, so every
      * existing construction — including all unit tests — keeps the old path.
-     * Wandbox is tried first when both are present.
+     * Tried in field order below: TIO first when several are present.
      */
     private PistonExecutionService pistonService;
     private WandboxExecutionService wandboxService;
+    private TioExecutionService tioService;
 
     public JudgeEngine(CodeExecutionService sandbox,
                        OutputComparator comparator,
@@ -64,6 +65,12 @@ public class JudgeEngine {
     @Autowired(required = false)
     public void setWandboxService(WandboxExecutionService wandboxService) {
         this.wandboxService = wandboxService;
+    }
+
+    /** Optional custom-input backend; tried before all others when present. */
+    @Autowired(required = false)
+    public void setTioService(TioExecutionService tioService) {
+        this.tioService = tioService;
     }
 
     public Submission judge(Submission submission) {
@@ -133,6 +140,16 @@ public class JudgeEngine {
     public ExecutionResult runCustomInput(Problem problem, String sourceCode,
                                           Language language, String stdin) {
         LanguageExecutor executor = getExecutor(language);
+        if (tioService != null) {
+            try {
+                return tioService.execute(sourceCode, stdin, executor);
+            } catch (TioClient.TioException e) {
+                // TIO is a best-effort convenience: fall through to the
+                // next provider (unsupported guidance under DOMjudge).
+                LOG.warn("TIO custom run failed, falling back to judging provider: {}",
+                        e.getMessage());
+            }
+        }
         if (wandboxService != null) {
             try {
                 return wandboxService.execute(sourceCode, stdin, executor);
