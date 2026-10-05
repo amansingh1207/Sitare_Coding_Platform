@@ -31,8 +31,18 @@ export interface SubmissionListData {
   totalPages: number;
 }
 
-const POLL_INTERVAL_MS = 1500;
 const POLL_TIMEOUT_MS = 120000;
+
+/**
+ * Poll spacing grows while a verdict is pending: fast feedback in the
+ * first seconds, gentle on the server during long judge queues.
+ * Exported for tests; the poller caps at the last entry.
+ */
+export const POLL_DELAYS_MS = [1500, 1500, 3000, 3000, 5000];
+
+export function pollDelayForAttempt(attempt: number): number {
+  return POLL_DELAYS_MS[Math.min(Math.max(attempt, 0), POLL_DELAYS_MS.length - 1)];
+}
 
 const TERMINAL_STATUSES = new Set([
   'ACCEPTED',
@@ -85,6 +95,7 @@ export const submissionsApi = {
     onProgress?: (submission: SubmissionDetail) => void,
   ): Promise<SubmissionDetail> {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
+    let attempt = 0;
     for (;;) {
       const submission = await submissionsApi.get(id);
       if (TERMINAL_STATUSES.has(submission.status)) {
@@ -94,7 +105,8 @@ export const submissionsApi = {
         throw new Error('Timed out waiting for judging result');
       }
       onProgress?.(submission);
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      await new Promise((resolve) => setTimeout(resolve, pollDelayForAttempt(attempt)));
+      attempt += 1;
     }
   },
 };

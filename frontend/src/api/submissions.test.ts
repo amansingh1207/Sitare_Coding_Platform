@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { submissionsApi } from './submissions';
+import { pollDelayForAttempt, submissionsApi } from './submissions';
 
 function mockFetchSequence(bodies: unknown[]) {
   const mock = vi.fn();
@@ -67,6 +67,12 @@ describe('submissionsApi', () => {
     await vi.runAllTimersAsync();
     await promise;
     expect(seen).toEqual(['PENDING', 'JUDGING']);
+  });
+
+  it('spaces polls wider the longer judging takes', () => {
+    expect([0, 1, 2, 3, 4, 5, 10].map(pollDelayForAttempt)).toEqual([
+      1500, 1500, 3000, 3000, 5000, 5000, 5000,
+    ]);
   });
 
   it('never includes practice-timer data in the submission payload', async () => {
