@@ -16,9 +16,21 @@ public class SubmissionDetailResponse {
     private String judgedAt;
     private String sourceCode;
     private List<SubmissionTestResultResponse> testResults;
+    /**
+     * 1-based place in the judging queue, present only while PENDING.
+     * Null once judging starts or finishes — and always null from older
+     * backends, which the frontend tolerates.
+     */
+    private Integer queuePosition;
 
     public static SubmissionDetailResponse from(Submission submission,
                                                 List<SubmissionTestResultResponse> results) {
+        return from(submission, results, null);
+    }
+
+    public static SubmissionDetailResponse from(Submission submission,
+                                                List<SubmissionTestResultResponse> results,
+                                                Integer queuePosition) {
         SubmissionDetailResponse response = new SubmissionDetailResponse();
         response.id = submission.getId();
         response.problem = new ProblemSummary(
@@ -34,6 +46,7 @@ public class SubmissionDetailResponse {
                 ? submission.getJudgedAt().toString() : null;
         response.sourceCode = submission.getSourceCode();
         response.testResults = results;
+        response.queuePosition = queuePosition;
         return response;
     }
 
@@ -75,6 +88,10 @@ public class SubmissionDetailResponse {
 
     public List<SubmissionTestResultResponse> getTestResults() {
         return testResults;
+    }
+
+    public Integer getQueuePosition() {
+        return queuePosition;
     }
 
     public record ProblemSummary(Long id, String slug, String title) {

@@ -225,7 +225,23 @@ public class SubmissionService {
                 .filter(result -> Boolean.TRUE.equals(result.getTestCase().getSample()))
                 .map(SubmissionTestResultResponse::from)
                 .toList();
-        return SubmissionDetailResponse.from(submission, results);
+        return SubmissionDetailResponse.from(submission, results,
+                queuePositionOf(submission));
+    }
+
+    /**
+     * 1-based place in the judging queue, shown while the submission waits.
+     * Counts PENDING rows submitted earlier (the worker judges oldest
+     * first); null once judging starts or finishes, so callers show the
+     * verdict instead of a stale number.
+     */
+    private Integer queuePositionOf(Submission submission) {
+        if (submission.getStatus() != SubmissionStatus.PENDING) {
+            return null;
+        }
+        long ahead = submissionRepository.countByStatusAndSubmittedAtBefore(
+                SubmissionStatus.PENDING, submission.getSubmittedAt());
+        return (int) Math.min(ahead + 1, Integer.MAX_VALUE);
     }
 
     /**

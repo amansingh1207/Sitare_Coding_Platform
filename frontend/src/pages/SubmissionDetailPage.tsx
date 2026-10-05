@@ -63,6 +63,12 @@ export function SubmissionDetailPage() {
         <dd>{formatMemory(submission.memoryUsedKb)}</dd>
         <dt>Submitted</dt>
         <dd>{formatTimestamp(submission.submittedAt)}</dd>
+        {submission.status === 'PENDING' && submission.queuePosition != null && (
+          <>
+            <dt>Queue position</dt>
+            <dd data-testid="queue-position">#{submission.queuePosition}</dd>
+          </>
+        )}
         {submission.judgedAt && (
           <>
             <dt>Judged</dt>

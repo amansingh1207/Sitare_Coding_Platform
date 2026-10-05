@@ -95,6 +95,8 @@ export function ProblemDetailPage() {
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const [submitState, setSubmitState] = useState<ActionState>({ kind: 'idle' });
   const [submission, setSubmission] = useState<SubmissionDetail | null>(null);
+  // Latest non-terminal poll while a submit is in flight; cleared on verdict.
+  const [submitProgress, setSubmitProgress] = useState<SubmissionDetail | null>(null);
   const [customInput, setCustomInput] = useState('');
   const [customResult, setCustomResult] = useState<CustomRunResult | null>(null);
   const [customState, setCustomState] = useState<ActionState>({ kind: 'idle' });
@@ -312,6 +314,7 @@ export function ProblemDetailPage() {
     }
     setSubmitState({ kind: 'running' });
     setSubmission(null);
+    setSubmitProgress(null);
     setConsoleTab('result');
     try {
       const ref = await submissionsApi.submit({
@@ -319,8 +322,9 @@ export function ProblemDetailPage() {
         language,
         sourceCode: code,
       });
-      const judged = await submissionsApi.pollUntilJudged(ref.id);
+      const judged = await submissionsApi.pollUntilJudged(ref.id, setSubmitProgress);
       setSubmission(judged);
+      setSubmitProgress(null);
       setSubmitState({ kind: 'idle' });
     } catch (err) {
       setSubmitState({
@@ -574,6 +578,18 @@ export function ProblemDetailPage() {
               <div className="console-result">
                 {runState.kind === 'error' && <p className="error">{runState.message}</p>}
                 {submitState.kind === 'error' && <p className="error">{submitState.message}</p>}
+                {submitState.kind === 'running' && submitProgress?.status === 'PENDING' && (
+                  <p className="help-text" data-testid="submit-queue-progress">
+                    {submitProgress.queuePosition != null
+                      ? `In queue · position #${submitProgress.queuePosition}`
+                      : 'In queue…'}
+                  </p>
+                )}
+                {submitState.kind === 'running' && submitProgress?.status === 'JUDGING' && (
+                  <p className="help-text" data-testid="submit-judging-progress">
+                    Judging…
+                  </p>
+                )}
                 {runResult && (
                   <>
                     <p className="run-status">

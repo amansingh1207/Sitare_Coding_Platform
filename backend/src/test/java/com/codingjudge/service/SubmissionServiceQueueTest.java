@@ -4,6 +4,7 @@ import com.codingjudge.judge.JudgeEngine;
 import com.codingjudge.model.entity.Problem;
 import com.codingjudge.model.entity.Submission;
 import com.codingjudge.model.entity.TestCase;
+import com.codingjudge.model.entity.User;
 import com.codingjudge.model.enums.Language;
 import com.codingjudge.model.enums.SubmissionStatus;
 import com.codingjudge.repository.ProblemRepository;
@@ -16,9 +17,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,7 +50,9 @@ class SubmissionServiceQueueTest {
 
     @BeforeEach
     void setUp() {
-        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+        // Needed only by judgeQueued (programmatic transactions); getForUser
+        // tests never touch the manager, so keep this stub lenient.
+        lenient().when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         submissionService = new SubmissionService(
                 submissionRepository, testResultRepository, userRepository,
                 problemRepository, judgeEngine, transactionManager, 256, true);
@@ -57,6 +62,8 @@ class SubmissionServiceQueueTest {
         Problem problem = new Problem();
         problem.addTestCase(new TestCase());
         Submission submission = new Submission();
+        ReflectionTestUtils.setField(submission, "id", 7L);
+        ReflectionTestUtils.setField(submission, "submittedAt", java.time.Instant.now());
         submission.setProblem(problem);
         submission.setLanguage(Language.JAVA);
         submission.setSourceCode("class Main{}");
@@ -121,5 +128,40 @@ class SubmissionServiceQueueTest {
         // Load throws -> INTERNAL_ERROR marking reloads, finds nothing, saves nothing.
         verify(judgeEngine, never()).judge(any());
         verify(submissionRepository, never()).save(any());
+    }
+
+    @Test
+    void pendingSubmissionReportsOneBasedQueuePosition() {
+        User user = new User();
+        ReflectionTestUtils.setField(user, "id", 9L);
+        Submission submission = queuedSubmission();
+        submission.setUser(user);
+        when(userRepository.findByEmail("u@uni.edu")).thenReturn(Optional.of(user));
+        when(submissionRepository.findById(7L)).thenReturn(Optional.of(submission));
+        when(testResultRepository.findBySubmissionId(7L)).thenReturn(List.of());
+        when(submissionRepository.countByStatusAndSubmittedAtBefore(
+                eq(SubmissionStatus.PENDING), any())).thenReturn(3L);
+
+        var response = submissionService.getForUser("u@uni.edu", 7L);
+
+        assertThat(response.getQueuePosition()).isEqualTo(4);
+    }
+
+    @Test
+    void judgingSubmissionReportsNoQueuePosition() {
+        User user = new User();
+        ReflectionTestUtils.setField(user, "id", 9L);
+        Submission submission = queuedSubmission();
+        submission.setUser(user);
+        submission.setStatus(SubmissionStatus.JUDGING);
+        when(userRepository.findByEmail("u@uni.edu")).thenReturn(Optional.of(user));
+        when(submissionRepository.findById(7L)).thenReturn(Optional.of(submission));
+        when(testResultRepository.findBySubmissionId(7L)).thenReturn(List.of());
+
+        var response = submissionService.getForUser("u@uni.edu", 7L);
+
+        assertThat(response.getQueuePosition()).isNull();
+        verify(submissionRepository, never())
+                .countByStatusAndSubmittedAtBefore(any(), any());
     }
 }

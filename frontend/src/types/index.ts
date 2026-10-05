@@ -120,6 +120,8 @@ export interface SubmissionDetail extends SubmissionRef {
   judgedAt: string | null;
   sourceCode: string;
   testResults: TestCaseResult[];
+  /** 1-based queue place while PENDING; absent on older backends. */
+  queuePosition?: number | null;
 }
 
 export interface SubmissionSummary {

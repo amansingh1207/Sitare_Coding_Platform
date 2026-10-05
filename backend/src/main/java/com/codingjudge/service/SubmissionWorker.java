@@ -45,6 +45,13 @@ public class SubmissionWorker {
     private final ThreadPoolTaskExecutor executor;
     private final boolean enabled;
     private final int maxClaimPerTick;
+    /**
+     * Saturation warnings are throttled: a burst pins the pool for minutes
+     * and the poller ticks every second, so an unthrottled WARN buried the
+     * logs (and real issues) in thousands of identical lines.
+     */
+    private volatile long lastSaturationWarnMs = 0;
+    static final long SATURATION_WARN_INTERVAL_MS = 60_000;
 
     public SubmissionWorker(SubmissionRepository submissionRepository,
                            SubmissionService submissionService,
@@ -92,7 +99,15 @@ public class SubmissionWorker {
                 executor.execute(() -> submissionService.judgeQueued(id));
             } catch (RejectedExecutionException e) {
                 // Pool saturated: rows stay PENDING, next tick retries.
-                LOG.warn("Worker pool saturated, deferring {} queued submissions", ids.size());
+                long now = System.currentTimeMillis();
+                if (now - lastSaturationWarnMs >= SATURATION_WARN_INTERVAL_MS) {
+                    lastSaturationWarnMs = now;
+                    LOG.warn("Worker pool saturated, deferring {} queued submissions "
+                            + "(further notices throttled 60s)", ids.size());
+                } else {
+                    LOG.debug("Worker pool saturated, deferring {} queued submissions",
+                            ids.size());
+                }
                 return;
             }
         }

@@ -178,6 +178,30 @@ describe('ProblemDetailPage', () => {
     expect(screen.getAllByText(/84 ms/).length).toBeGreaterThan(0);
   });
 
+  it('shows queue position while a submit waits, then clears it on verdict', async () => {
+    mockFetch.mockResolvedValueOnce(ok(PROBLEM));
+    await renderPage();
+
+    mockFetch.mockResolvedValueOnce(ok({ id: 42, status: 'PENDING', submittedAt: 'now' }));
+    mockFetch.mockResolvedValueOnce(
+      ok({ id: 42, status: 'PENDING', queuePosition: 3, submittedAt: 'now' }),
+    );
+    mockFetch.mockResolvedValueOnce(ok(SUBMISSION_ACCEPTED));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Code' }));
+
+    // First poll returns PENDING: progress shows while the 1.5s-spaced
+    // second poll is still in flight (real timers: ~2s total, no leaks).
+    expect(await screen.findByTestId('submit-queue-progress')).toBeTruthy();
+    expect(screen.getByText(/position #3/)).toBeTruthy();
+
+    await waitFor(
+      () => expect(screen.getAllByText(/Submission #42/).length).toBe(2),
+      { timeout: 5000 },
+    );
+    expect(screen.queryByTestId('submit-queue-progress')).toBeNull();
+  }, 10000);
+
   it('reports a failed run instead of silently doing nothing', async () => {
     mockFetch.mockResolvedValueOnce(ok(PROBLEM));
     await renderPage();

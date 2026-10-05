@@ -80,7 +80,10 @@ export const submissionsApi = {
     );
   },
 
-  async pollUntilJudged(id: number): Promise<SubmissionDetail> {
+  async pollUntilJudged(
+    id: number,
+    onProgress?: (submission: SubmissionDetail) => void,
+  ): Promise<SubmissionDetail> {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     for (;;) {
       const submission = await submissionsApi.get(id);
@@ -90,6 +93,7 @@ export const submissionsApi = {
       if (Date.now() > deadline) {
         throw new Error('Timed out waiting for judging result');
       }
+      onProgress?.(submission);
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     }
   },

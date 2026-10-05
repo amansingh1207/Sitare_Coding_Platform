@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 
 public interface SubmissionRepository extends JpaRepository<Submission, Long> {
@@ -70,4 +71,10 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
                              @Param("pending") SubmissionStatus pending);
 
     long countByStatus(SubmissionStatus status);
+
+    /**
+     * Queue position support: how many rows are still ahead of a PENDING
+     * submission. Backed by the (status, submitted_at) index (V7).
+     */
+    long countByStatusAndSubmittedAtBefore(SubmissionStatus status, Instant submittedAt);
 }

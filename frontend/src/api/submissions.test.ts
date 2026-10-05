@@ -55,6 +55,20 @@ describe('submissionsApi', () => {
     expect(mock).toHaveBeenCalledTimes(3);
   });
 
+  it('reports intermediate polls through onProgress', async () => {
+    vi.useFakeTimers();
+    mockFetchSequence([
+      { id: 7, status: 'PENDING', queuePosition: 4 },
+      { id: 7, status: 'JUDGING', queuePosition: null },
+      { id: 7, status: 'ACCEPTED', testResults: [] },
+    ]);
+    const seen: string[] = [];
+    const promise = submissionsApi.pollUntilJudged(7, (s) => seen.push(s.status));
+    await vi.runAllTimersAsync();
+    await promise;
+    expect(seen).toEqual(['PENDING', 'JUDGING']);
+  });
+
   it('never includes practice-timer data in the submission payload', async () => {
     // The practice timer is a client-side study aid and must not influence
     // judging. The request body is asserted exactly: only problemId, language
