@@ -58,8 +58,17 @@ public class WandboxExecutionService {
      */
     public ExecutionResult execute(String sourceCode, String stdin,
                                    LanguageExecutor executor) {
+        String filename;
+        try {
+            filename = executor.getSourceFileName();
+        } catch (RuntimeException e) {
+            filename = null;
+        }
+        if (filename == null || filename.isBlank()) {
+            filename = defaultFilename(executor);
+        }
         WandboxClient.RunResult run = client.compile(
-                compiler(executor), sourceCode,
+                compiler(executor), filename, sourceCode,
                 stdin == null ? "" : stdin, rawOptions(executor));
         return translate(run);
     }
@@ -80,6 +89,16 @@ public class WandboxExecutionService {
             return CPP_RAW_OPTIONS;
         }
         return "";
+    }
+
+    private static String defaultFilename(LanguageExecutor executor) {
+        if (executor instanceof JavaExecutor) {
+            return "Main.java";
+        }
+        if (executor instanceof CppExecutor) {
+            return "main.cpp";
+        }
+        return "main.py";
     }
 
     private static ExecutionResult translate(WandboxClient.RunResult run) {

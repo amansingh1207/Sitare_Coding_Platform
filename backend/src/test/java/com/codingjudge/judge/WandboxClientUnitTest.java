@@ -1,11 +1,17 @@
 package com.codingjudge.judge;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -37,7 +43,7 @@ class WandboxClientUnitTest {
         WandboxClient client = clientFor(stub(200, json));
 
         WandboxClient.RunResult result =
-                client.compile("cpython-3.13.8", "print(3+4)", "", "");
+                client.compile("cpython-3.13.8", "main.py", "print(3+4)", "", "");
 
         assertEquals("7\n", result.programOutput());
         assertEquals(0, result.programExitCode());
@@ -51,7 +57,7 @@ class WandboxClientUnitTest {
         WandboxClient client = clientFor(stub(200, json));
 
         WandboxClient.RunResult result =
-                client.compile("cpython-3.13.8", "raise Exception('boom')", "", "");
+                client.compile("cpython-3.13.8", "main.py", "raise Exception('boom')", "", "");
 
         assertEquals(1, result.programExitCode());
         assertEquals("boom", result.programError());
@@ -64,7 +70,7 @@ class WandboxClientUnitTest {
         WandboxClient client = clientFor(stub(200, json));
 
         WandboxClient.RunResult result =
-                client.compile("gcc-head", "broken", "", "-std=c++17 -O2");
+                client.compile("gcc-head", "main.cpp", "broken", "", "-std=c++17 -O2");
 
         assertEquals("prog.cc:1:1: error", result.compilerError());
     }
@@ -74,7 +80,7 @@ class WandboxClientUnitTest {
         WandboxClient client = clientFor(stub(429, "Too Many Requests"));
 
         assertThrows(WandboxClient.WandboxException.class,
-                () -> client.compile("gcc-head", "int main(){}", "", ""));
+                () -> client.compile("gcc-head", "main.cpp", "int main(){}", "", ""));
     }
 
     @Test
@@ -82,7 +88,7 @@ class WandboxClientUnitTest {
         WandboxClient client = clientFor(stub(200, "not-json"));
 
         assertThrows(WandboxClient.WandboxException.class,
-                () -> client.compile("gcc-head", "int main(){}", "", ""));
+                () -> client.compile("gcc-head", "main.cpp", "int main(){}", "", ""));
     }
 
     @Test
@@ -92,6 +98,43 @@ class WandboxClientUnitTest {
         WandboxClient client = clientFor(http);
 
         assertThrows(WandboxClient.WandboxConnectionException.class,
-                () -> client.compile("gcc-head", "int main(){}", "", ""));
+                () -> client.compile("gcc-head", "main.cpp", "int main(){}", "", ""));
+    }
+
+    /**
+     * Java's {@code public class Main} only compiles when the file is named
+     * {@code Main.java} — the request must carry the filename, not just code.
+     */
+    @Test
+    void compileSendsCodesArrayWithFilename() throws Exception {
+        AtomicReference<String> body = new AtomicReference<>();
+        byte[] responseBytes = ("{\"status\":\"0\",\"compiler_output\":\"\",\"compiler_error\":\"\","
+                + "\"program_output\":\"hi\",\"program_error\":\"\",\"program_exit_code\":\"0\"}")
+                .getBytes(StandardCharsets.UTF_8);
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/compile.json", exchange -> {
+            body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, responseBytes.length);
+            exchange.getResponseBody().write(responseBytes);
+            exchange.close();
+        });
+        server.start();
+        try {
+            WandboxClient client = new WandboxClient(
+                    "http://localhost:" + server.getAddress().getPort() + "/api",
+                    HttpClient.newHttpClient(), Duration.ofSeconds(5));
+
+            WandboxClient.RunResult result = client.compile(
+                    "openjdk-jdk-21+35", "Main.java", "class Main{}", "", "");
+
+            assertEquals("hi", result.programOutput());
+            JsonNode payload = new ObjectMapper().readTree(body.get());
+            assertEquals("Main.java", payload.path("codes").path(0).path("file").asText());
+            assertEquals("class Main{}", payload.path("codes").path(0).path("code").asText());
+            assertFalse(payload.has("code"));
+        } finally {
+            server.stop(0);
+        }
     }
 }

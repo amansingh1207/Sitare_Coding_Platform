@@ -38,45 +38,54 @@ class WandboxExecutionServiceTest {
     }
 
     @Test
-    void javaMapsToPinnedCompiler() {
+    void javaMapsToPinnedCompilerWithMainJavaFilename() {
+        when(javaExecutor.getSourceFileName()).thenReturn("Main.java");
         when(client.compile(eq(WandboxExecutionService.JAVA_COMPILER),
-                anyString(), anyString(), anyString()))
+                anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(ok("7\n"));
 
         ExecutionResult result = service.execute("class Main{}", "", javaExecutor);
 
         assertThat(result.output()).isEqualTo("7\n");
         verify(client).compile(
-                eq(WandboxExecutionService.JAVA_COMPILER), anyString(), anyString(), eq(""));
+                eq(WandboxExecutionService.JAVA_COMPILER), eq("Main.java"),
+                anyString(), anyString(), eq(""));
     }
 
     @Test
     void cppSendsRawOptions() {
+        when(cppExecutor.getSourceFileName()).thenReturn("main.cpp");
         when(client.compile(eq(WandboxExecutionService.CPP_COMPILER),
-                anyString(), anyString(), eq(WandboxExecutionService.CPP_RAW_OPTIONS)))
+                anyString(), anyString(), anyString(),
+                eq(WandboxExecutionService.CPP_RAW_OPTIONS)))
                 .thenReturn(ok("ok"));
 
         ExecutionResult result = service.execute("int main(){}", "", cppExecutor);
 
         assertThat(result.output()).isEqualTo("ok");
         verify(client).compile(eq(WandboxExecutionService.CPP_COMPILER),
-                anyString(), anyString(), eq(WandboxExecutionService.CPP_RAW_OPTIONS));
+                eq("main.cpp"), anyString(), anyString(),
+                eq(WandboxExecutionService.CPP_RAW_OPTIONS));
     }
 
     @Test
     void pythonMapsToPinnedCompiler() {
+        when(pythonExecutor.getSourceFileName()).thenReturn("main.py");
         when(client.compile(eq(WandboxExecutionService.PYTHON_COMPILER),
-                anyString(), anyString(), anyString()))
+                anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(ok("hi"));
 
         ExecutionResult result = service.execute("print('hi')", "", pythonExecutor);
 
         assertThat(result.output()).isEqualTo("hi");
+        verify(client).compile(eq(WandboxExecutionService.PYTHON_COMPILER),
+                eq("main.py"), anyString(), anyString(), anyString());
     }
 
     @Test
     void compilerErrorTranslatesToCompilationError() {
-        when(client.compile(anyString(), anyString(), anyString(), anyString()))
+        when(cppExecutor.getSourceFileName()).thenReturn("main.cpp");
+        when(client.compile(anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(new WandboxClient.RunResult("1", "", "prog.cc:1:1: error", "", "", -1));
 
         ExecutionResult result = service.execute("bad", "", cppExecutor);
@@ -87,7 +96,8 @@ class WandboxExecutionServiceTest {
 
     @Test
     void runtimeErrorTranslatesToError() {
-        when(client.compile(anyString(), anyString(), anyString(), anyString()))
+        when(pythonExecutor.getSourceFileName()).thenReturn("main.py");
+        when(client.compile(anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(new WandboxClient.RunResult("0", "", "", "", "NameError: x", 1));
 
         ExecutionResult result = service.execute("print(x)", "", pythonExecutor);
@@ -98,7 +108,8 @@ class WandboxExecutionServiceTest {
 
     @Test
     void clientExceptionsBubbleUp() {
-        when(client.compile(anyString(), anyString(), anyString(), anyString()))
+        when(javaExecutor.getSourceFileName()).thenReturn("Main.java");
+        when(client.compile(anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenThrow(new WandboxClient.WandboxException("down"));
 
         assertThrows(WandboxClient.WandboxException.class,

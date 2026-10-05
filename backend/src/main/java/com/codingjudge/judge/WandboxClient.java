@@ -79,15 +79,21 @@ public class WandboxClient {
     /**
      * Compile (if needed) and run {@code code} with {@code stdin}.
      *
+     * @param filename source file name sent in the {@code codes} array —
+     *                 required for Java ({@code public class Main} must live
+     *                 in {@code Main.java})
      * @param compilerOptionRaw raw flags for compilers that accept them
      *                          (e.g. {@code -std=c++17 -O2}); blank means none
      */
-    public RunResult compile(String compiler, String code, String stdin,
-                             String compilerOptionRaw) {
+    public RunResult compile(String compiler, String filename, String code,
+                             String stdin, String compilerOptionRaw) {
         try {
+            Map<String, Object> file = new LinkedHashMap<>();
+            file.put("file", filename);
+            file.put("code", code);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("compiler", compiler);
-            payload.put("code", code);
+            payload.put("codes", java.util.List.of(file));
             payload.put("stdin", stdin == null ? "" : stdin);
             payload.put("save", false);
             if (compilerOptionRaw != null && !compilerOptionRaw.isBlank()) {
