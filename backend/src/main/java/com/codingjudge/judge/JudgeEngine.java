@@ -32,11 +32,13 @@ public class JudgeEngine {
     private final CppExecutor cppExecutor;
     private final PythonExecutor pythonExecutor;
     /**
-     * Optional custom-input runner (Piston). Null unless
-     * {@code judge.customrun.provider=piston} created the bean, so every
+     * Optional custom-input runners (Wandbox, Piston). Null unless the matching
+     * {@code judge.customrun.provider} value created the bean, so every
      * existing construction — including all unit tests — keeps the old path.
+     * Wandbox is tried first when both are present.
      */
     private PistonExecutionService pistonService;
+    private WandboxExecutionService wandboxService;
 
     public JudgeEngine(CodeExecutionService sandbox,
                        OutputComparator comparator,
@@ -56,6 +58,12 @@ public class JudgeEngine {
     @Autowired(required = false)
     public void setPistonService(PistonExecutionService pistonService) {
         this.pistonService = pistonService;
+    }
+
+    /** Optional custom-input backend; tried before Piston when both exist. */
+    @Autowired(required = false)
+    public void setWandboxService(WandboxExecutionService wandboxService) {
+        this.wandboxService = wandboxService;
     }
 
     public Submission judge(Submission submission) {
@@ -125,6 +133,16 @@ public class JudgeEngine {
     public ExecutionResult runCustomInput(Problem problem, String sourceCode,
                                           Language language, String stdin) {
         LanguageExecutor executor = getExecutor(language);
+        if (wandboxService != null) {
+            try {
+                return wandboxService.execute(sourceCode, stdin, executor);
+            } catch (WandboxClient.WandboxException e) {
+                // Wandbox is a best-effort convenience: fall through to the
+                // next provider (unsupported guidance under DOMjudge).
+                LOG.warn("Wandbox custom run failed, falling back to judging provider: {}",
+                        e.getMessage());
+            }
+        }
         if (pistonService != null) {
             try {
                 return pistonService.execute(
