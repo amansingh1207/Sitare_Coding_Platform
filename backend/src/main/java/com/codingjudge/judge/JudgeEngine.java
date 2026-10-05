@@ -33,7 +33,7 @@ public class JudgeEngine {
     private final PythonExecutor pythonExecutor;
     /**
      * Optional custom-input runner (Piston). Null unless
-     * {@code judge.customrun-provider=piston} created the bean, so every
+     * {@code judge.customrun.provider=piston} created the bean, so every
      * existing construction — including all unit tests — keeps the old path.
      */
     private PistonExecutionService pistonService;

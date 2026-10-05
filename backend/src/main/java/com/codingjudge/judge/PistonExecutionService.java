@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 /**
  * Custom-input runs through the free hosted Piston API.
  *
- * <p>Active only with {@code judge.customrun-provider=piston}
+ * <p>Active only with {@code judge.customrun.provider=piston}
  * ({@code JUDGE_CUSTOMRUN_PROVIDER}). Deliberately NOT a {@link
  * CodeExecutionService}: {@link JudgeEngine} keeps selecting the single
  * judging provider (Docker / DOMjudge) untouched, and only the editor's
@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
  * with the usual unsupported guidance under DOMjudge).
  */
 @Component
-@ConditionalOnProperty(name = "judge.customrun-provider", havingValue = "piston")
+@ConditionalOnProperty(name = "judge.customrun.provider", havingValue = "piston")
 public class PistonExecutionService {
 
     private static final Logger LOG = LoggerFactory.getLogger(PistonExecutionService.class);
@@ -40,6 +40,7 @@ public class PistonExecutionService {
     public PistonExecutionService(
             @Value("${piston.base-url:https://emkc.org/api/v2/piston}") String baseUrl) {
         this(new PistonClient(baseUrl));
+        LOG.info("Piston custom-run provider ENABLED (baseUrl={})", baseUrl);
     }
 
     /** Test-only seam: inject a preconfigured client. */
