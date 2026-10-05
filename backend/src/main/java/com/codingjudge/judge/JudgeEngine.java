@@ -11,6 +11,9 @@ import com.codingjudge.model.entity.TestCase;
 import com.codingjudge.model.enums.Language;
 import com.codingjudge.model.enums.SubmissionStatus;
 import com.codingjudge.repository.SubmissionTestResultRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -20,12 +23,20 @@ import java.util.List;
 @Component
 public class JudgeEngine {
 
+    private static final Logger LOG = LoggerFactory.getLogger(JudgeEngine.class);
+
     private final CodeExecutionService sandbox;
     private final OutputComparator comparator;
     private final SubmissionTestResultRepository testResultRepository;
     private final JavaExecutor javaExecutor;
     private final CppExecutor cppExecutor;
     private final PythonExecutor pythonExecutor;
+    /**
+     * Optional custom-input runner (Piston). Null unless
+     * {@code judge.customrun-provider=piston} created the bean, so every
+     * existing construction — including all unit tests — keeps the old path.
+     */
+    private PistonExecutionService pistonService;
 
     public JudgeEngine(CodeExecutionService sandbox,
                        OutputComparator comparator,
@@ -39,6 +50,12 @@ public class JudgeEngine {
         this.javaExecutor = javaExecutor;
         this.cppExecutor = cppExecutor;
         this.pythonExecutor = pythonExecutor;
+    }
+
+    /** Optional custom-input backend; absent means the judging provider runs it. */
+    @Autowired(required = false)
+    public void setPistonService(PistonExecutionService pistonService) {
+        this.pistonService = pistonService;
     }
 
     public Submission judge(Submission submission) {
@@ -107,10 +124,22 @@ public class JudgeEngine {
      */
     public ExecutionResult runCustomInput(Problem problem, String sourceCode,
                                           Language language, String stdin) {
+        LanguageExecutor executor = getExecutor(language);
+        if (pistonService != null) {
+            try {
+                return pistonService.execute(
+                        sourceCode, stdin, executor, problem.getTimeLimitMs());
+            } catch (PistonClient.PistonException e) {
+                // Piston is a best-effort convenience: fall through to the
+                // judging provider (unsupported guidance under DOMjudge).
+                LOG.warn("Piston custom run failed, falling back to judging provider: {}",
+                        e.getMessage());
+            }
+        }
         List<ExecutionResult> results = sandbox.executeBatch(
                 sourceCode,
                 stdin == null ? List.of("") : List.of(stdin),
-                getExecutor(language),
+                executor,
                 problem.getTimeLimitMs(),
                 problem.getMemoryLimitMb());
         return results.isEmpty()
