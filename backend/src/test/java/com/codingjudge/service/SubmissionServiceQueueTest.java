@@ -45,6 +45,7 @@ class SubmissionServiceQueueTest {
     @Mock private JudgeEngine judgeEngine;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
+    @Mock private RateLimiter rateLimiter;
 
     private SubmissionService submissionService;
 
@@ -55,7 +56,8 @@ class SubmissionServiceQueueTest {
         lenient().when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         submissionService = new SubmissionService(
                 submissionRepository, testResultRepository, userRepository,
-                problemRepository, judgeEngine, transactionManager, 256, true);
+                problemRepository, judgeEngine, transactionManager, rateLimiter,
+                256, true, 0, 0, 0);
     }
 
     private static Submission queuedSubmission() {

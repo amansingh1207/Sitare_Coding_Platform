@@ -47,8 +47,12 @@ public class SubmissionService {
     private final UserRepository userRepository;
     private final ProblemRepository problemRepository;
     private final JudgeEngine judgeEngine;
+    private final RateLimiter rateLimiter;
     private final int maxSourceSizeKb;
     private final boolean workerEnabled;
+    private final long submitCooldownSeconds;
+    private final long runCooldownSeconds;
+    private final long customRunCooldownSeconds;
     /**
      * Programmatic transactions for the judging worker: each phase gets its
      * own short transaction (field injection avoids the self-invocation trap
@@ -62,20 +66,29 @@ public class SubmissionService {
                              ProblemRepository problemRepository,
                              JudgeEngine judgeEngine,
                              PlatformTransactionManager transactionManager,
+                             RateLimiter rateLimiter,
                              @Value("${judge.max-source-size-kb:256}") int maxSourceSizeKb,
-                             @Value("${judge.worker.enabled:true}") boolean workerEnabled) {
+                             @Value("${judge.worker.enabled:true}") boolean workerEnabled,
+                             @Value("${judge.cooldown.submit-seconds:10}") long submitCooldownSeconds,
+                             @Value("${judge.cooldown.run-seconds:10}") long runCooldownSeconds,
+                             @Value("${judge.cooldown.custom-run-seconds:15}") long customRunCooldownSeconds) {
         this.submissionRepository = submissionRepository;
         this.testResultRepository = testResultRepository;
         this.userRepository = userRepository;
         this.problemRepository = problemRepository;
         this.judgeEngine = judgeEngine;
+        this.rateLimiter = rateLimiter;
         this.txTemplate = new TransactionTemplate(transactionManager);
         this.maxSourceSizeKb = maxSourceSizeKb;
         this.workerEnabled = workerEnabled;
+        this.submitCooldownSeconds = submitCooldownSeconds;
+        this.runCooldownSeconds = runCooldownSeconds;
+        this.customRunCooldownSeconds = customRunCooldownSeconds;
     }
 
     @Transactional
     public SubmissionRefResponse submit(String email, SubmitRequest request) {
+        rateLimiter.check("submit:" + email, submitCooldownSeconds);
         User user = requireUser(email);
         Problem problem = problemRepository.findById(request.getProblemId())
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -175,6 +188,7 @@ public class SubmissionService {
      * eagerly up front, so no lazy access happens during the wait.
      */
     public RunResultResponse run(String email, SubmitRequest request) {
+        rateLimiter.check("run:" + email, runCooldownSeconds);
         requireUser(email);
         Problem problem = problemRepository.findWithTestCasesById(request.getProblemId())
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -196,6 +210,7 @@ public class SubmissionService {
      * the network and must never hold a pool connection while doing so.
      */
     public CustomRunResponse runCustom(String email, CustomRunRequest request) {
+        rateLimiter.check("custom:" + email, customRunCooldownSeconds);
         requireUser(email);
         Problem problem = problemRepository.findById(request.getProblemId())
                 .orElseThrow(() -> new ResourceNotFoundException(
