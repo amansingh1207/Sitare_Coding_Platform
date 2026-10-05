@@ -1,6 +1,7 @@
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { useHeartbeat } from './hooks/useHeartbeat';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
@@ -34,6 +35,11 @@ function AdminRoute({ children }: { children: ReactNode }) {
     return <Navigate to="/problems" replace />;
   }
   return <>{children}</>;
+}
+
+function Heartbeat() {
+  useHeartbeat();
+  return null;
 }
 
 function Header() {
@@ -82,6 +88,7 @@ function Header() {
 function App() {
   return (
     <AuthProvider>
+      <Heartbeat />
       <div className="app">
         <Header />
         <main>

@@ -3,6 +3,7 @@ package com.codingjudge.controller;
 import com.codingjudge.model.dto.ApiResponse;
 import com.codingjudge.model.dto.response.AdminProblemSummary;
 import com.codingjudge.model.dto.response.ImportPackResponse;
+import com.codingjudge.model.dto.response.PresenceResponse;
 import com.codingjudge.service.AdminService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,6 +30,11 @@ public class AdminController {
     public ResponseEntity<ApiResponse<List<AdminProblemSummary>>> listProblems() {
         List<AdminProblemSummary> problems = adminService.listProblems();
         return ResponseEntity.ok(ApiResponse.ok(problems));
+    }
+
+    @GetMapping("/presence")
+    public ResponseEntity<ApiResponse<PresenceResponse>> presence() {
+        return ResponseEntity.ok(ApiResponse.ok(adminService.getPresence()));
     }
 
     @PostMapping("/problems/import-pack")

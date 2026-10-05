@@ -166,3 +166,11 @@ export interface ImportPackPayload {
   defaultMemoryLimitMb: number;
   defaultDifficulty: Difficulty;
 }
+
+export interface PresenceData {
+  activeUsers: number;
+  registeredUsers: number;
+  judgingInFlight: number;
+  pendingQueue: number;
+  signupsToday: number;
+}

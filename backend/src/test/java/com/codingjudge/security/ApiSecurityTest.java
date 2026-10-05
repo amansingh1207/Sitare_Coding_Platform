@@ -3,11 +3,14 @@ package com.codingjudge.security;
 import com.codingjudge.model.entity.Problem;
 import com.codingjudge.model.entity.TestCase;
 import com.codingjudge.model.enums.Difficulty;
+import com.codingjudge.model.enums.Role;
 import com.codingjudge.repository.ProblemRepository;
 import com.codingjudge.repository.SubmissionRepository;
 import com.codingjudge.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +57,9 @@ class ApiSecurityTest {
 
     @Autowired
     private SubmissionRepository submissionRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     private Long problemId;
     private String tokenA;
@@ -243,6 +249,46 @@ class ApiSecurityTest {
         assertThat(stored.getPasswordHash()).startsWith("$2");
     }
 
+    @Test
+    void heartbeat_requiresAuthentication() throws Exception {
+        mockMvc.perform(post("/api/auth/heartbeat"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void heartbeat_recordsLastSeenForAuthenticatedUser() throws Exception {
+        mockMvc.perform(post("/api/auth/heartbeat")
+                        .header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk());
+
+        // Bulk updates bypass the persistence context: clear it so the
+        // assertion reads the row, not the cached entity.
+        entityManager.clear();
+        var stored = userRepository.findByEmail("owner@uni.edu").orElseThrow();
+        assertThat(stored.getLastSeenAt()).isNotNull();
+    }
+
+    @Test
+    void presence_isForbiddenForStudents() throws Exception {
+        mockMvc.perform(get("/api/admin/presence")
+                        .header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void presence_isVisibleToProfessors() throws Exception {
+        String professorToken = registerPromoteAndLogin("prof@uni.edu", "profuser");
+
+        mockMvc.perform(get("/api/admin/presence")
+                        .header("Authorization", "Bearer " + professorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.activeUsers").exists())
+                .andExpect(jsonPath("$.data.registeredUsers").exists())
+                .andExpect(jsonPath("$.data.judgingInFlight").exists())
+                .andExpect(jsonPath("$.data.pendingQueue").exists())
+                .andExpect(jsonPath("$.data.signupsToday").exists());
+    }
+
     private long submit(String token, String sourceCode) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/submissions")
                         .header("Authorization", "Bearer " + token)
@@ -265,6 +311,32 @@ class ApiSecurityTest {
                 .andExpect(status().isCreated());
 
         userRepository.findByEmail(email).ifPresent(u -> { u.setEmailVerified(true); userRepository.save(u); });
+
+        MvcResult result = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("""
+                                {"email":"%s","password":"password123"}""", email)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode json = objectMapper.readTree(result.getResponse().getContentAsString());
+        return json.get("data").get("token").asText();
+    }
+
+    private String registerPromoteAndLogin(String email, String username) throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("""
+                                {"email":"%s","username":"%s","password":"password123",
+                                 "fullName":"Test User"}""", email, username)))
+                .andExpect(status().isCreated());
+
+        // Promote before login so the issued token carries the professor role.
+        userRepository.findByEmail(email).ifPresent(u -> {
+            u.setEmailVerified(true);
+            u.setRole(Role.PROFESSOR);
+            userRepository.save(u);
+        });
 
         MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

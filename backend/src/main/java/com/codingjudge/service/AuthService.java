@@ -112,6 +112,20 @@ public class AuthService {
     }
 
     /**
+     * Presence heartbeat from an active tab (called ~once a minute).
+     *
+     * <p>Single-statement write in its own short transaction — deliberately
+     * not bundled with anything else, so the ping can never hold a pool
+     * connection.
+     */
+    @Transactional
+    public void heartbeat(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalStateException("Authenticated user not found"));
+        userRepository.touchLastSeen(user.getId(), Instant.now());
+    }
+
+    /**
      * Send verification OTP to the user's email.
      */
     @Transactional

@@ -3,11 +3,15 @@ package com.codingjudge.service;
 import com.codingjudge.model.dto.response.AdminProblemSummary;
 import com.codingjudge.model.dto.response.ImportPackResponse;
 import com.codingjudge.model.dto.response.ImportedProblemSummary;
+import com.codingjudge.model.dto.response.PresenceResponse;
 import com.codingjudge.model.entity.Problem;
 import com.codingjudge.model.entity.TestCase;
 import com.codingjudge.model.enums.Difficulty;
+import com.codingjudge.model.enums.SubmissionStatus;
 import com.codingjudge.repository.ProblemRepository;
+import com.codingjudge.repository.SubmissionRepository;
 import com.codingjudge.repository.TestCaseRepository;
+import com.codingjudge.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -17,6 +21,9 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -31,18 +38,26 @@ import java.util.zip.ZipInputStream;
 @Service
 public class AdminService {
 
+    /** A heartbeat newer than this counts the user as online. */
+    static final long ACTIVE_WINDOW_MINUTES = 5;
+
     private final ProblemRepository problemRepository;
     private final TestCaseRepository testCaseRepository;
+    private final UserRepository userRepository;
+    private final SubmissionRepository submissionRepository;
 
     public AdminService(ProblemRepository problemRepository,
-                        TestCaseRepository testCaseRepository) {
+                        TestCaseRepository testCaseRepository,
+                        UserRepository userRepository,
+                        SubmissionRepository submissionRepository) {
         this.problemRepository = problemRepository;
         this.testCaseRepository = testCaseRepository;
+        this.userRepository = userRepository;
+        this.submissionRepository = submissionRepository;
     }
 
     @Transactional(readOnly = true)
-    public List<AdminProblemSummary> listProblems() {
-        List<Problem> problems = problemRepository.findAll();
+    public List<AdminProblemSummary> listProblems() {        List<Problem> problems = problemRepository.findAll();
         List<AdminProblemSummary> result = new ArrayList<>();
         for (Problem problem : problems) {
             int total = testCaseRepository.findByProblemIdOrderBySortOrderAsc(problem.getId()).size();
@@ -52,6 +67,23 @@ public class AdminService {
         }
         result.sort(Comparator.comparing(AdminProblemSummary::getId));
         return result;
+    }
+
+    /**
+     * Live traffic snapshot for the admin panel. Five cheap indexed counts,
+     * no personal data — safe to poll every ~30s from one professor tab.
+     */
+    @Transactional(readOnly = true)
+    public PresenceResponse getPresence() {
+        Instant now = Instant.now();
+        long active = userRepository.countByLastSeenAtAfter(
+                now.minusSeconds(ACTIVE_WINDOW_MINUTES * 60));
+        long registered = userRepository.count();
+        long judging = submissionRepository.countByStatus(SubmissionStatus.JUDGING);
+        long pending = submissionRepository.countByStatus(SubmissionStatus.PENDING);
+        long signupsToday = userRepository.countByCreatedAtAfter(
+                LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC));
+        return new PresenceResponse(active, registered, judging, pending, signupsToday);
     }
 
     /**

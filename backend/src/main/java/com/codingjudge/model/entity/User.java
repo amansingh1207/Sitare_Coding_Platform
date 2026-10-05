@@ -47,6 +47,9 @@ public class User {
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified;
 
+    @Column(name = "last_seen_at")
+    private Instant lastSeenAt;
+
     @PrePersist
     protected void onCreate() {
         createdAt = Instant.now();
@@ -120,5 +123,13 @@ public class User {
 
     public void setEmailVerified(boolean emailVerified) {
         this.emailVerified = emailVerified;
+    }
+
+    public Instant getLastSeenAt() {
+        return lastSeenAt;
+    }
+
+    public void setLastSeenAt(Instant lastSeenAt) {
+        this.lastSeenAt = lastSeenAt;
     }
 }

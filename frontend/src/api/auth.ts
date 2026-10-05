@@ -57,6 +57,11 @@ export const authApi = {
     });
   },
 
+  /** Presence ping for the admin traffic view. Silent by design. */
+  async heartbeat(): Promise<void> {
+    await apiFetch<string>('/auth/heartbeat', { method: 'POST' });
+  },
+
   logout(): void {
     clearToken();
   },

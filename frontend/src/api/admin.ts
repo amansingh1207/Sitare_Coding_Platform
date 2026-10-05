@@ -1,9 +1,13 @@
 import { apiFetch } from './client';
-import type { AdminProblemSummary, ImportPackPayload, ImportPackResponse } from '../types';
+import type { AdminProblemSummary, ImportPackPayload, ImportPackResponse, PresenceData } from '../types';
 
 export const adminApi = {
   async listProblems(): Promise<AdminProblemSummary[]> {
     return apiFetch<AdminProblemSummary[]>('/admin/problems');
+  },
+
+  async presence(): Promise<PresenceData> {
+    return apiFetch<PresenceData>('/admin/presence');
   },
 
   async importPack(payload: ImportPackPayload, file: File): Promise<ImportPackResponse> {

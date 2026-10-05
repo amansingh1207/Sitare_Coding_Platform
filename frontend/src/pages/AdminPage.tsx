@@ -7,12 +7,14 @@ import type {
   Difficulty,
   ImportedProblemSummary,
   ImportPackPayload,
+  PresenceData,
 } from '../types';
 
 export function AdminPage() {
   const [problems, setProblems] = useState<AdminProblemSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [presence, setPresence] = useState<PresenceData | null>(null);
 
   // Problem pack import state
   const [packWeekLabel, setPackWeekLabel] = useState('');
@@ -25,6 +27,26 @@ export function AdminPage() {
 
   useEffect(() => {
     loadProblems();
+  }, []);
+
+  useEffect(() => {
+    let stopped = false;
+    const loadPresence = async () => {
+      try {
+        const data = await adminApi.presence();
+        if (!stopped) {
+          setPresence(data);
+        }
+      } catch {
+        // Traffic snapshot is best-effort; the rest of the panel keeps working.
+      }
+    };
+    void loadPresence();
+    const timer = window.setInterval(loadPresence, 30_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
   }, []);
 
   async function loadProblems() {
@@ -73,6 +95,26 @@ export function AdminPage() {
 
       {error && <p className="error">{error}</p>}
       {success && <p className="success">{success}</p>}
+
+      <section className="admin-section">
+        <h3>Live traffic</h3>
+        {presence ? (
+          <dl className="submission-meta">
+            <dt>Online now</dt>
+            <dd data-testid="presence-active">{presence.activeUsers}</dd>
+            <dt>Registered users</dt>
+            <dd>{presence.registeredUsers}</dd>
+            <dt>Judging in flight</dt>
+            <dd>{presence.judgingInFlight}</dd>
+            <dt>Queue waiting</dt>
+            <dd>{presence.pendingQueue}</dd>
+            <dt>Signups today</dt>
+            <dd>{presence.signupsToday}</dd>
+          </dl>
+        ) : (
+          <p className="help-text">Loading traffic…</p>
+        )}
+      </section>
 
       <section className="admin-section">
         <h3>Problems</h3>

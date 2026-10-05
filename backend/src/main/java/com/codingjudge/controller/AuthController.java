@@ -57,6 +57,13 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.ok(user));
     }
 
+    @PostMapping("/heartbeat")
+    public ResponseEntity<ApiResponse<String>> heartbeat(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        authService.heartbeat(userDetails.getUsername());
+        return ResponseEntity.ok(ApiResponse.ok("heartbeat recorded"));
+    }
+
     @PostMapping("/send-verification-otp")
     public ResponseEntity<ApiResponse<String>> sendVerificationOtp(
             @Valid @RequestBody EmailRequest request) {
