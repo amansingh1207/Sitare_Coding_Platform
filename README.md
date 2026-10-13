@@ -4,6 +4,8 @@ A **post-contest coding practice and online judge platform** for students.
 
 After weekly graded coding contests, students use CodingJudge to practice problems, verify their solutions, and learn from their mistakes — all in a safe, sandboxed environment.
 
+**Live:** Frontend → https://codingjudge-frontend.onrender.com/ · API → https://sitare-coding-platform.onrender.com/api *(free-tier Render — first load can take ~a minute)*
+
 ---
 
 ## Problem Being Solved
@@ -97,8 +99,8 @@ until the verdict is terminal.
 
 ```bash
 # 1. Clone the repository
-git clone <repo-url>
-cd coding-judge
+git clone https://github.com/amansingh1207/Sitare_Coding_Platform.git
+cd Sitare_Coding_Platform
 
 # 2. Copy environment configuration
 cp .env.example .env
@@ -282,8 +284,8 @@ timer. On top of that: a DB-backed worker queue, a DOMjudge execution provider
 
 | Area | Coverage |
 |------|----------|
-| Backend tests | 177 passing (JUnit, incl. judge provider + queue + security suites) |
-| Frontend tests | 96 passing across 12 files (API client, utilities, DOM-level component and page tests) |
+| Backend tests | 260 test methods across 39 test classes (JUnit — judge providers, worker queue, security, API) |
+| Frontend tests | 108 test cases across 16 test files (Vitest — API client, utilities, components, pages) |
 | Live judge verification | All 7 verdicts, all 3 languages (local Docker + AWS DOMjudge), burst-tested |
 
 See [DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) for the per-phase record,
@@ -297,7 +299,7 @@ Known limitations are listed in [SECURITY.md](docs/SECURITY.md) section 11.
 | Piece | Where | Notes |
 |-------|-------|-------|
 | Backend | Render (`sitare-coding-platform.onrender.com`) | `server.address=0.0.0.0`, honors `PORT`; health at `/api/health` |
-| Frontend | Render static site | `VITE_API_BASE_URL` is baked at build time — redeploy after changing it |
+| Frontend | Render static site (`codingjudge-frontend.onrender.com`) | `VITE_API_BASE_URL` is baked at build time — redeploy after changing it |
 | Database | Neon PostgreSQL (managed) | Flyway migrations run on boot |
 | Staging judge | AWS EC2 `ap-southeast-2` (t3.micro) | DOMjudge 9 (domserver + judgehost + MariaDB), tuned for 1 GiB RAM |
 | Judge HTTPS | Caddy on the EC2 box | Let's Encrypt IP certificate, auto-renew via systemd + deploy hook |
@@ -307,6 +309,12 @@ Rules that stay in force: production default is `EXECUTION_PROVIDER=docker`
 (switch only with explicit approval); the judge port is never exposed
 publicly — traffic goes through Caddy; no secrets are committed (`.env`
 files are gitignored, CI/CD uses secret stores).
+
+---
+
+## Author
+
+[Aman Singh](https://github.com/amansingh1207) — B.Tech CSE, Sitare University.
 
 ---
 
