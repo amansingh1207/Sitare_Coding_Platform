@@ -1,5 +1,6 @@
 package com.codingjudge.service;
 
+import com.codingjudge.model.dto.response.AdminProblemSummary;
 import com.codingjudge.model.dto.response.ImportPackResponse;
 import com.codingjudge.model.dto.response.ImportedProblemSummary;
 import com.codingjudge.model.entity.Problem;
@@ -147,6 +148,44 @@ class AdminImportPackTest {
         assertThatThrownBy(() -> importPack(files, "  "))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Week label");
+    }
+
+    @Test
+    void listProblemsCountsHugeRowsWithoutLoadingThem() {
+        Problem problem = new Problem();
+        problem.setSlug("big-rows");
+        problem.setTitle("Big Rows");
+        problem.setStatement("Story");
+        problem.setInputFormat("-");
+        problem.setOutputFormat("-");
+        problem.setDifficulty(Difficulty.MEDIUM);
+        problem.setWeekLabel("Week 5");
+        problem.setTimeLimitMs(2000);
+        problem.setMemoryLimitMb(256);
+        Problem saved = problemRepository.save(problem);
+
+        TestCase big = new TestCase();
+        big.setProblem(saved);
+        big.setInputData("x".repeat(5_000_000));
+        big.setExpectedOutput("y".repeat(5_000_000));
+        big.setSample(false);
+        big.setSortOrder(0);
+        testCaseRepository.save(big);
+
+        TestCase sample = new TestCase();
+        sample.setProblem(saved);
+        sample.setInputData("1");
+        sample.setExpectedOutput("1");
+        sample.setSample(true);
+        sample.setSortOrder(1);
+        testCaseRepository.save(sample);
+
+        AdminProblemSummary summary = adminService.listProblems().stream()
+                .filter(s -> s.getSlug().equals("big-rows"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(summary.getTestCaseCount()).isEqualTo(2);
+        assertThat(summary.getSampleCount()).isEqualTo(1);
     }
 
     private ImportPackResponse importPack(Map<String, String> files, String weekLabel) {

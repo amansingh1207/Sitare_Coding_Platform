@@ -72,9 +72,9 @@ public class AdminService {
     public List<AdminProblemSummary> listProblems() {        List<Problem> problems = problemRepository.findAll();
         List<AdminProblemSummary> result = new ArrayList<>();
         for (Problem problem : problems) {
-            int total = testCaseRepository.findByProblemIdOrderBySortOrderAsc(problem.getId()).size();
-            int samples = testCaseRepository
-                    .findByProblemIdAndSampleTrueOrderBySortOrderAsc(problem.getId()).size();
+            int total = (int) testCaseRepository.countByProblemId(problem.getId());
+            int samples = (int) testCaseRepository
+                    .countByProblemIdAndSampleTrue(problem.getId());
             result.add(AdminProblemSummary.from(problem, total, samples));
         }
         result.sort(Comparator.comparing(AdminProblemSummary::getId));
