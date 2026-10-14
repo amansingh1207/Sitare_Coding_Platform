@@ -12,6 +12,8 @@ import com.codingjudge.repository.ProblemRepository;
 import com.codingjudge.repository.SubmissionRepository;
 import com.codingjudge.repository.TestCaseRepository;
 import com.codingjudge.repository.UserRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -19,21 +21,25 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 
 @Service
 public class AdminService {
@@ -55,6 +61,12 @@ public class AdminService {
         this.userRepository = userRepository;
         this.submissionRepository = submissionRepository;
     }
+
+    /** Test-case rows written before the session is flushed and cleared. */
+    private static final int IMPORT_BATCH_SIZE = 25;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Transactional(readOnly = true)
     public List<AdminProblemSummary> listProblems() {        List<Problem> problems = problemRepository.findAll();
@@ -100,6 +112,10 @@ public class AdminService {
      *     ...
      * </pre>
      * Problems whose slug already exists are skipped and reported.
+     *
+     * Memory stays bounded no matter how large the pack is: the upload is
+     * spooled to a temp file and every test file is streamed straight into
+     * its own row, so at most one .in/.ans pair is ever held in memory.
      */
     @Transactional
     public ImportPackResponse importProblemPack(MultipartFile file, String weekLabel,
@@ -120,110 +136,177 @@ public class AdminService {
         int memoryLimitMb = defaultMemoryLimitMb != null ? defaultMemoryLimitMb : 256;
         Difficulty fallbackDifficulty = parseDifficultyLenient(defaultDifficulty);
 
-        Map<String, String> entries = readZipEntries(file);
-        Map<String, String> statements = new TreeMap<>();
-        for (String name : entries.keySet()) {
-            if (name.toLowerCase().endsWith("/statement.html")
-                    || name.equalsIgnoreCase("statement.html")) {
-                int slash = name.lastIndexOf('/');
-                String folder = slash >= 0 ? name.substring(0, slash) : "";
-                statements.put(folder, entries.get(name));
-            }
-        }
-        if (statements.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "No problem folders found: expected <problem>/statement.html inside the ZIP");
-        }
-
-        List<ImportedProblemSummary> results = new ArrayList<>();
-        for (Map.Entry<String, String> folderEntry : statements.entrySet()) {
-            String folder = folderEntry.getKey();
-            String baseName = folder.contains("/") ? folder.substring(folder.lastIndexOf('/') + 1) : folder;
-            String slug = sanitizeSlug(baseName);
-
-            if (problemRepository.existsBySlug(slug)) {
-                results.add(new ImportedProblemSummary(slug, baseName, "SKIPPED", 0, 0,
-                        "Problem already exists"));
-                continue;
-            }
-
-            ParsedStatement parsed = parseStatementHtml(folderEntry.getValue());
-            String title = StringUtils.hasText(parsed.title) ? parsed.title : baseName;
-
-            Problem problem = new Problem();
-            problem.setSlug(slug);
-            problem.setTitle(title);
-            problem.setStatement(StringUtils.hasText(parsed.story) ? parsed.story : title);
-            problem.setInputFormat(StringUtils.hasText(parsed.inputFormat) ? parsed.inputFormat : "-");
-            problem.setOutputFormat(StringUtils.hasText(parsed.outputFormat) ? parsed.outputFormat : "-");
-            problem.setConstraints(null);
-            problem.setDifficulty(parsed.difficulty != null ? parsed.difficulty : fallbackDifficulty);
-            problem.setWeekLabel(weekLabel.trim());
-            problem.setTimeLimitMs(parsed.timeLimitMs != null ? parsed.timeLimitMs : timeLimitMs);
-            problem.setMemoryLimitMb(memoryLimitMb);
-            Problem saved = problemRepository.save(problem);
-
-            Map<String, String> sampleFiles = collectTestFiles(entries, folder, "sample");
-            Map<String, String> secretFiles = collectTestFiles(entries, folder, "secret");
-
-            int order = 0;
-            int sampleCount = 0;
-            for (Map.Entry<String, String> test : sampleFiles.entrySet()) {
-                TestCase tc = buildTestCase(saved, test.getKey(), test.getValue(), true, order++);
-                testCaseRepository.save(tc);
-                sampleCount++;
-            }
-            int hiddenCount = 0;
-            for (Map.Entry<String, String> test : secretFiles.entrySet()) {
-                TestCase tc = buildTestCase(saved, test.getKey(), test.getValue(), false, order++);
-                testCaseRepository.save(tc);
-                hiddenCount++;
-            }
-
-            results.add(new ImportedProblemSummary(slug, title, "CREATED",
-                    sampleCount, hiddenCount,
-                    sampleCount + hiddenCount == 0 ? "No .in/.ans pairs found" : "Imported successfully"));
-        }
-
-        return new ImportPackResponse(results);
-    }
-
-    private Map<String, String> readZipEntries(MultipartFile file) {
-        Map<String, String> entries = new LinkedHashMap<>();
-        try (ZipInputStream zis = new ZipInputStream(file.getInputStream(), StandardCharsets.UTF_8)) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                if (!entry.isDirectory()) {
-                    entries.put(entry.getName(), readAllText(zis));
+        Path tempZip = spoolUploadToTempFile(file);
+        try (ZipFile zip = openZip(tempZip)) {
+            List<String> entryNames = listEntryNames(zip);
+            Map<String, String> statements = new TreeMap<>();
+            for (String name : entryNames) {
+                if (name.toLowerCase().endsWith("/statement.html")
+                        || name.equalsIgnoreCase("statement.html")) {
+                    int slash = name.lastIndexOf('/');
+                    String folder = slash >= 0 ? name.substring(0, slash) : "";
+                    statements.put(folder, readEntryText(zip, name));
                 }
             }
+            if (statements.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "No problem folders found: expected <problem>/statement.html inside the ZIP");
+            }
+
+            List<ImportedProblemSummary> results = new ArrayList<>();
+            for (Map.Entry<String, String> folderEntry : statements.entrySet()) {
+                String folder = folderEntry.getKey();
+                String baseName = folder.contains("/") ? folder.substring(folder.lastIndexOf('/') + 1) : folder;
+                String slug = sanitizeSlug(baseName);
+
+                if (problemRepository.existsBySlug(slug)) {
+                    results.add(new ImportedProblemSummary(slug, baseName, "SKIPPED", 0, 0,
+                            "Problem already exists"));
+                    continue;
+                }
+
+                ParsedStatement parsed = parseStatementHtml(folderEntry.getValue());
+                String title = StringUtils.hasText(parsed.title) ? parsed.title : baseName;
+
+                Problem problem = new Problem();
+                problem.setSlug(slug);
+                problem.setTitle(title);
+                problem.setStatement(StringUtils.hasText(parsed.story) ? parsed.story : title);
+                problem.setInputFormat(StringUtils.hasText(parsed.inputFormat) ? parsed.inputFormat : "-");
+                problem.setOutputFormat(StringUtils.hasText(parsed.outputFormat) ? parsed.outputFormat : "-");
+                problem.setConstraints(null);
+                problem.setDifficulty(parsed.difficulty != null ? parsed.difficulty : fallbackDifficulty);
+                problem.setWeekLabel(weekLabel.trim());
+                problem.setTimeLimitMs(parsed.timeLimitMs != null ? parsed.timeLimitMs : timeLimitMs);
+                problem.setMemoryLimitMb(memoryLimitMb);
+                Problem saved = problemRepository.save(problem);
+
+                Map<String, String[]> sampleFiles = collectTestEntryNames(entryNames, folder, "sample");
+                Map<String, String[]> secretFiles = collectTestEntryNames(entryNames, folder, "secret");
+
+                int order = 0;
+                int sampleCount = 0;
+                int sinceFlush = 0;
+                for (Map.Entry<String, String[]> test : sampleFiles.entrySet()) {
+                    TestCase tc = new TestCase();
+                    tc.setProblem(saved);
+                    tc.setInputData(readEntryText(zip, test.getValue()[0]));
+                    tc.setExpectedOutput(readEntryText(zip, test.getValue()[1]));
+                    tc.setSample(true);
+                    tc.setSortOrder(order++);
+                    testCaseRepository.save(tc);
+                    sampleCount++;
+                    if (++sinceFlush % IMPORT_BATCH_SIZE == 0) {
+                        saved = flushImportBatch(saved);
+                    }
+                }
+                int hiddenCount = 0;
+                for (Map.Entry<String, String[]> test : secretFiles.entrySet()) {
+                    TestCase tc = new TestCase();
+                    tc.setProblem(saved);
+                    tc.setInputData(readEntryText(zip, test.getValue()[0]));
+                    tc.setExpectedOutput(readEntryText(zip, test.getValue()[1]));
+                    tc.setSample(false);
+                    tc.setSortOrder(order++);
+                    testCaseRepository.save(tc);
+                    hiddenCount++;
+                    if (++sinceFlush % IMPORT_BATCH_SIZE == 0) {
+                        saved = flushImportBatch(saved);
+                    }
+                }
+
+                results.add(new ImportedProblemSummary(slug, title, "CREATED",
+                        sampleCount, hiddenCount,
+                        sampleCount + hiddenCount == 0 ? "No .in/.ans pairs found" : "Imported successfully"));
+            }
+
+            return new ImportPackResponse(results);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Failed to read ZIP file: " + e.getMessage());
+        } finally {
+            try {
+                Files.deleteIfExists(tempZip);
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    /**
+     * Flushes pending test-case inserts and clears the session so a huge
+     * pack never accumulates in memory. Returns a managed Problem reference
+     * for the rows still to come.
+     */
+    private Problem flushImportBatch(Problem problem) {
+        entityManager.flush();
+        entityManager.clear();
+        return problemRepository.getReferenceById(problem.getId());
+    }
+
+    private Path spoolUploadToTempFile(MultipartFile file) {
+        try {
+            Path temp = Files.createTempFile("problem-pack-", ".zip");
+            try (InputStream in = file.getInputStream()) {
+                Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                try {
+                    Files.deleteIfExists(temp);
+                } catch (IOException ignored) {
+                }
+                throw new IllegalArgumentException("Failed to read ZIP file: " + e.getMessage());
+            }
+            return temp;
         } catch (IOException e) {
             throw new IllegalArgumentException("Failed to read ZIP file: " + e.getMessage());
         }
-        return entries;
     }
 
-    private String readAllText(ZipInputStream zis) throws IOException {
-        StringBuilder sb = new StringBuilder();
-        BufferedReader reader = new BufferedReader(new InputStreamReader(zis, StandardCharsets.UTF_8));
-        String line;
-        boolean first = true;
-        while ((line = reader.readLine()) != null) {
-            if (!first) {
-                sb.append("\n");
+    private ZipFile openZip(Path tempZip) throws IOException {
+        return new ZipFile(tempZip.toFile(), StandardCharsets.UTF_8);
+    }
+
+    private List<String> listEntryNames(ZipFile zip) {
+        List<String> names = new ArrayList<>();
+        Enumeration<? extends ZipEntry> entries = zip.entries();
+        while (entries.hasMoreElements()) {
+            ZipEntry entry = entries.nextElement();
+            if (!entry.isDirectory()) {
+                names.add(entry.getName());
             }
-            sb.append(line);
-            first = false;
+        }
+        return names;
+    }
+
+    private String readEntryText(ZipFile zip, String entryName) throws IOException {
+        ZipEntry entry = zip.getEntry(entryName);
+        if (entry == null || entry.isDirectory()) {
+            throw new IOException("Missing ZIP entry: " + entryName);
+        }
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(zip.getInputStream(entry), StandardCharsets.UTF_8))) {
+            String line;
+            boolean first = true;
+            while ((line = reader.readLine()) != null) {
+                if (!first) {
+                    sb.append("\n");
+                }
+                sb.append(line);
+                first = false;
+            }
         }
         return sb.toString();
     }
 
-    private Map<String, String> collectTestFiles(Map<String, String> entries, String folder, String kind) {
+    /**
+     * Pairs .in/.ans entry names (not contents, so giant test files never
+     * sit in memory together). Ordering and case-insensitive matching are
+     * identical to the old content-based version.
+     */
+    private Map<String, String[]> collectTestEntryNames(List<String> entryNames, String folder, String kind) {
         String prefix = folder.isEmpty() ? "" : folder + "/";
         Map<String, String> inputs = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         Map<String, String> outputs = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        for (Map.Entry<String, String> e : entries.entrySet()) {
-            String name = e.getKey();
+        for (String name : entryNames) {
             if (!name.startsWith(prefix)) {
                 continue;
             }
@@ -237,16 +320,16 @@ public class AdminService {
             }
             String lower = fileName.toLowerCase();
             if (lower.endsWith(".in")) {
-                inputs.put(fileName.substring(0, fileName.length() - 3), e.getValue());
+                inputs.put(fileName.substring(0, fileName.length() - 3), name);
             } else if (lower.endsWith(".ans")) {
-                outputs.put(fileName.substring(0, fileName.length() - 4), e.getValue());
+                outputs.put(fileName.substring(0, fileName.length() - 4), name);
             }
         }
-        Map<String, String> pairs = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        Map<String, String[]> pairs = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         for (Map.Entry<String, String> in : inputs.entrySet()) {
             String ans = findIgnoreCase(outputs, in.getKey());
             if (ans != null) {
-                pairs.put(in.getKey(), in.getValue() + "\n---ANS---\n" + ans);
+                pairs.put(in.getKey(), new String[]{in.getValue(), ans});
             }
         }
         return pairs;
@@ -259,18 +342,6 @@ public class AdminService {
             }
         }
         return null;
-    }
-
-    private TestCase buildTestCase(Problem problem, String name, String packed,
-                                   boolean sample, int order) {
-        int sep = packed.indexOf("\n---ANS---\n");
-        TestCase tc = new TestCase();
-        tc.setProblem(problem);
-        tc.setInputData(packed.substring(0, sep));
-        tc.setExpectedOutput(packed.substring(sep + "\n---ANS---\n".length()));
-        tc.setSample(sample);
-        tc.setSortOrder(order);
-        return tc;
     }
 
     private String sanitizeSlug(String raw) {
