@@ -324,8 +324,6 @@ class JudgeEngineTest {
         TestCase hidden = caseWith(2L, "in-b", "out:in-b", false);
         Submission target = freshSubmission(sample, hidden);
         when(sandbox.handlesProblemsNatively()).thenReturn(true);
-        when(testCaseRepository.findByProblemIdOrderBySortOrderAsc(any()))
-                .thenReturn(List.of(sample, hidden));
         when(sandbox.judgeTestCases(any(), anyList(), anyString(), any())).thenReturn(List.of(
                 ExecutionResult.providerVerdict(SubmissionStatus.ACCEPTED, 5, 100),
                 ExecutionResult.providerVerdict(SubmissionStatus.ACCEPTED, 6, 100)));
@@ -336,6 +334,7 @@ class JudgeEngineTest {
         verify(sandbox).judgeTestCases(eq(target.getProblem()), eq(List.of(sample, hidden)),
                 anyString(), any());
         verify(testResultRepository, times(2)).save(any(SubmissionTestResult.class));
+        verify(testCaseRepository, never()).findIdsByProblemIdOrderBySortOrderAsc(any());
     }
 
     @Test

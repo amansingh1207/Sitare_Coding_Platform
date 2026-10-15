@@ -91,6 +91,7 @@ class SubmissionServiceQueueTest {
         Submission submission = queuedSubmission();
         when(submissionRepository.claimQueued(eq(7L), any(), any())).thenReturn(1);
         when(submissionRepository.findById(7L)).thenReturn(Optional.of(submission));
+        when(judgeEngine.handlesProblemsNatively()).thenReturn(false);
         when(judgeEngine.judgeStreaming(any())).thenAnswer(invocation -> {
             Submission judged = invocation.getArgument(0);
             judged.setStatus(SubmissionStatus.ACCEPTED);
@@ -101,6 +102,28 @@ class SubmissionServiceQueueTest {
 
         submissionService.judgeQueued(7L);
 
+        ArgumentCaptor<Submission> saved = ArgumentCaptor.forClass(Submission.class);
+        verify(submissionRepository).save(saved.capture());
+        assertThat(saved.getValue().getStatus()).isEqualTo(SubmissionStatus.ACCEPTED);
+    }
+
+    @Test
+    void nativeProviderInitializesFullSuiteBeforeStreaming() {
+        Submission submission = queuedSubmission();
+        when(submissionRepository.claimQueued(eq(7L), any(), any())).thenReturn(1);
+        when(submissionRepository.findById(7L)).thenReturn(Optional.of(submission));
+        when(judgeEngine.handlesProblemsNatively()).thenReturn(true);
+        when(judgeEngine.judgeStreaming(any())).thenAnswer(invocation -> {
+            Submission judged = invocation.getArgument(0);
+            judged.setStatus(SubmissionStatus.ACCEPTED);
+            return judged;
+        });
+        when(submissionRepository.save(any())).thenAnswer(
+                invocation -> invocation.getArgument(0));
+
+        submissionService.judgeQueued(7L);
+
+        verify(judgeEngine).judgeStreaming(any());
         ArgumentCaptor<Submission> saved = ArgumentCaptor.forClass(Submission.class);
         verify(submissionRepository).save(saved.capture());
         assertThat(saved.getValue().getStatus()).isEqualTo(SubmissionStatus.ACCEPTED);

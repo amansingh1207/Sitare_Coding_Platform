@@ -81,6 +81,11 @@ public class JudgeEngine {
         return judgeWithTests(submission, submission.getProblem().getTestCases());
     }
 
+    /** Whether the live provider judges whole problems natively (DOMjudge). */
+    public boolean handlesProblemsNatively() {
+        return sandbox.handlesProblemsNatively();
+    }
+
     /**
      * Judges a submission one test case at a time, keeping memory bounded.
      *
@@ -91,15 +96,14 @@ public class JudgeEngine {
      * match {@link #judge(Submission)} exactly.
      *
      * <p>Providers that judge whole problems natively (DOMjudge) still take
-     * the whole-list path; those run on self-hosted infrastructure where the
-     * suite fits in memory.
+     * the whole-list path: they package and hash the entire suite, so the
+     * caller must have the collection initialized (as before). Those run on
+     * self-hosted infrastructure where the suite fits in memory.
      */
     public Submission judgeStreaming(Submission submission) {
         Problem problem = submission.getProblem();
         if (sandbox.handlesProblemsNatively()) {
-            List<TestCase> all = testCaseRepository
-                    .findByProblemIdOrderBySortOrderAsc(problem.getId());
-            return judgeWithTests(submission, all);
+            return judgeWithTests(submission, problem.getTestCases());
         }
         Language language = submission.getLanguage();
         LanguageExecutor executor = getExecutor(language);

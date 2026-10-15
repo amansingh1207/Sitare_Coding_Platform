@@ -149,6 +149,12 @@ public class SubmissionService {
                         .orElseThrow(() -> new IllegalStateException(
                                 "Claimed submission vanished: " + submissionId));
                 Hibernate.initialize(submission.getProblem());
+                if (judgeEngine.handlesProblemsNatively()) {
+                    // Native providers (DOMjudge) package the whole suite, so
+                    // they need the full collection, exactly as before. They
+                    // run on self-hosted infrastructure where it fits in memory.
+                    Hibernate.initialize(submission.getProblem().getTestCases());
+                }
                 return submission;
             });
             Submission judged = judgeEngine.judgeStreaming(detached);
