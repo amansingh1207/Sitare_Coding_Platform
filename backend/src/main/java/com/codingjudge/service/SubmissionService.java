@@ -15,12 +15,14 @@ import com.codingjudge.model.dto.response.SubmissionSummaryResponse;
 import com.codingjudge.model.dto.response.SubmissionTestResultResponse;
 import com.codingjudge.model.entity.Problem;
 import com.codingjudge.model.entity.Submission;
+import com.codingjudge.model.entity.TestCase;
 import com.codingjudge.model.entity.User;
 import com.codingjudge.model.enums.Language;
 import com.codingjudge.model.enums.SubmissionStatus;
 import com.codingjudge.repository.ProblemRepository;
 import com.codingjudge.repository.SubmissionRepository;
 import com.codingjudge.repository.SubmissionTestResultRepository;
+import com.codingjudge.repository.TestCaseRepository;
 import com.codingjudge.repository.UserRepository;
 import org.hibernate.Hibernate;
 import org.slf4j.Logger;
@@ -44,6 +46,7 @@ public class SubmissionService {
 
     private final SubmissionRepository submissionRepository;
     private final SubmissionTestResultRepository testResultRepository;
+    private final TestCaseRepository testCaseRepository;
     private final UserRepository userRepository;
     private final ProblemRepository problemRepository;
     private final JudgeEngine judgeEngine;
@@ -62,6 +65,7 @@ public class SubmissionService {
 
     public SubmissionService(SubmissionRepository submissionRepository,
                              SubmissionTestResultRepository testResultRepository,
+                             TestCaseRepository testCaseRepository,
                              UserRepository userRepository,
                              ProblemRepository problemRepository,
                              JudgeEngine judgeEngine,
@@ -74,6 +78,7 @@ public class SubmissionService {
                              @Value("${judge.cooldown.custom-run-seconds:15}") long customRunCooldownSeconds) {
         this.submissionRepository = submissionRepository;
         this.testResultRepository = testResultRepository;
+        this.testCaseRepository = testCaseRepository;
         this.userRepository = userRepository;
         this.problemRepository = problemRepository;
         this.judgeEngine = judgeEngine;
@@ -144,10 +149,9 @@ public class SubmissionService {
                         .orElseThrow(() -> new IllegalStateException(
                                 "Claimed submission vanished: " + submissionId));
                 Hibernate.initialize(submission.getProblem());
-                Hibernate.initialize(submission.getProblem().getTestCases());
                 return submission;
             });
-            Submission judged = judgeEngine.judge(detached);
+            Submission judged = judgeEngine.judgeStreaming(detached);
             txTemplate.execute(status -> {
                 submissionRepository.save(judged);
                 return null;
@@ -190,14 +194,16 @@ public class SubmissionService {
     public RunResultResponse run(String email, SubmitRequest request) {
         rateLimiter.check("run:" + email, runCooldownSeconds);
         requireUser(email);
-        Problem problem = problemRepository.findWithTestCasesById(request.getProblemId())
+        Problem problem = problemRepository.findById(request.getProblemId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Problem not found: " + request.getProblemId()));
+        List<TestCase> samples = testCaseRepository
+                .findByProblemIdAndSampleTrueOrderBySortOrderAsc(problem.getId());
         Language language = parseLanguage(request.getLanguage());
         requireSourceSize(request.getSourceCode());
 
         return RunResultResponse.from(
-                judgeEngine.runSamples(problem, request.getSourceCode(), language));
+                judgeEngine.runSamples(problem, samples, request.getSourceCode(), language));
     }
 
     /**

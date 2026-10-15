@@ -9,6 +9,7 @@ import com.codingjudge.model.entity.TestCase;
 import com.codingjudge.model.enums.Language;
 import com.codingjudge.model.enums.SubmissionStatus;
 import com.codingjudge.repository.SubmissionTestResultRepository;
+import com.codingjudge.repository.TestCaseRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -31,6 +32,7 @@ import static org.mockito.Mockito.times;
 class CodeExecutionServiceTest {
 
     @Mock private SubmissionTestResultRepository testResultRepository;
+    @Mock private TestCaseRepository testCaseRepository;
     @Mock private JavaExecutor javaExecutor;
     @Mock private CppExecutor cppExecutor;
     @Mock private PythonExecutor pythonExecutor;
@@ -59,7 +61,7 @@ class CodeExecutionServiceTest {
     void engineJudgesThroughNonDockerProvider() {
         FakeProvider provider = new FakeProvider();
         JudgeEngine engine = new JudgeEngine(provider, new OutputComparator(),
-                testResultRepository, javaExecutor, cppExecutor, pythonExecutor);
+                testResultRepository, testCaseRepository, javaExecutor, cppExecutor, pythonExecutor);
 
         Problem problem = new Problem();
         problem.setTimeLimitMs(2000);
@@ -104,7 +106,7 @@ class CodeExecutionServiceTest {
             }
         };
         JudgeEngine engine = new JudgeEngine(provider, new OutputComparator(),
-                testResultRepository, javaExecutor, cppExecutor, pythonExecutor);
+                testResultRepository, testCaseRepository, javaExecutor, cppExecutor, pythonExecutor);
 
         Problem problem = new Problem();
         problem.setTimeLimitMs(2000);

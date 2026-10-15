@@ -10,15 +10,20 @@ import com.codingjudge.model.entity.TestCase;
 import com.codingjudge.model.enums.Language;
 import com.codingjudge.model.enums.SubmissionStatus;
 import com.codingjudge.repository.SubmissionTestResultRepository;
+import com.codingjudge.repository.TestCaseRepository;
+import com.codingjudge.repository.TestCaseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -28,6 +33,7 @@ class JudgeEngineTest {
     @Mock private DockerSandbox sandbox;
     @Mock private OutputComparator comparator;
     @Mock private SubmissionTestResultRepository testResultRepository;
+    @Mock private TestCaseRepository testCaseRepository;
     @Mock private JavaExecutor javaExecutor;
     @Mock private CppExecutor cppExecutor;
     @Mock private PythonExecutor pythonExecutor;
@@ -39,7 +45,7 @@ class JudgeEngineTest {
     @BeforeEach
     void setUp() {
         judgeEngine = new JudgeEngine(sandbox, comparator, testResultRepository,
-                javaExecutor, cppExecutor, pythonExecutor);
+                testCaseRepository, javaExecutor, cppExecutor, pythonExecutor);
 
         submission = new Submission();
         submission.setId(1L);
@@ -215,5 +221,138 @@ class JudgeEngineTest {
         assertThat(result1.getStatus()).isEqualTo(SubmissionStatus.ACCEPTED);
         assertThat(result2.getStatus()).isEqualTo(SubmissionStatus.ACCEPTED);
         verify(sandbox, times(2)).executeBatch(anyString(), anyList(), any(), anyLong(), anyInt());
+    }
+
+    private TestCase caseWith(long id, String input, String expected, boolean sample) {
+        TestCase testCase = new TestCase();
+        testCase.setId(id);
+        testCase.setInputData(input);
+        testCase.setExpectedOutput(expected);
+        testCase.setSample(sample);
+        return testCase;
+    }
+
+    private Submission freshSubmission(TestCase... cases) {
+        Problem fresh = new Problem();
+        fresh.setTimeLimitMs(2000);
+        fresh.setMemoryLimitMb(256);
+        for (TestCase testCase : cases) {
+            fresh.addTestCase(testCase);
+        }
+        Submission freshSubmission = new Submission();
+        freshSubmission.setLanguage(Language.JAVA);
+        freshSubmission.setSourceCode("src");
+        freshSubmission.setProblem(fresh);
+        return freshSubmission;
+    }
+
+    private void echoSandbox() {
+        when(sandbox.executeBatch(anyString(), anyList(), any(), anyLong(), anyInt()))
+                .thenAnswer(invocation -> {
+                    List<String> inputs = invocation.getArgument(1);
+                    return inputs.stream()
+                            .map(in -> ExecutionResult.success("out:" + in, 10, 100))
+                            .toList();
+                });
+        when(comparator.compare(anyString(), anyString())).thenReturn(true);
+    }
+
+    @Test
+    void judgeStreaming_matchesLegacyJudge() {
+        TestCase sample = caseWith(1L, "in-a", "out:in-a", true);
+        TestCase hidden = caseWith(2L, "in-b", "out:in-b", false);
+        Submission target = freshSubmission(sample, hidden);
+        when(testCaseRepository.findIdsByProblemIdOrderBySortOrderAsc(any()))
+                .thenReturn(List.of(1L, 2L));
+        when(testCaseRepository.findById(1L)).thenReturn(Optional.of(sample));
+        when(testCaseRepository.findById(2L)).thenReturn(Optional.of(hidden));
+        echoSandbox();
+
+        Submission streamed = judgeEngine.judgeStreaming(target);
+        Submission legacy = judgeEngine.judge(target);
+
+        assertThat(streamed.getStatus()).isEqualTo(SubmissionStatus.ACCEPTED);
+        assertThat(legacy.getStatus()).isEqualTo(streamed.getStatus());
+        assertThat(legacy.getRuntimeMs()).isEqualTo(streamed.getRuntimeMs());
+        assertThat(legacy.getMemoryUsedKb()).isEqualTo(streamed.getMemoryUsedKb());
+        ArgumentCaptor<SubmissionTestResult> rows =
+                ArgumentCaptor.forClass(SubmissionTestResult.class);
+        verify(testResultRepository, times(4)).save(rows.capture());
+        assertThat(rows.getAllValues()).extracting(SubmissionTestResult::getActualOutput)
+                .containsExactly("out:in-a", "out:in-b", "out:in-a", "out:in-b");
+        verify(sandbox, times(3)).executeBatch(anyString(), anyList(), any(), anyLong(), anyInt());
+    }
+
+    @Test
+    void judgeStreaming_handlesFatHiddenCase() {
+        TestCase sample = caseWith(1L, "in-a", "out:in-a", true);
+        TestCase hidden = caseWith(2L, "x".repeat(5_000_000), "out:BIG", false);
+        Submission target = freshSubmission(sample, hidden);
+        when(testCaseRepository.findIdsByProblemIdOrderBySortOrderAsc(any()))
+                .thenReturn(List.of(1L, 2L));
+        when(testCaseRepository.findById(1L)).thenReturn(Optional.of(sample));
+        when(testCaseRepository.findById(2L)).thenReturn(Optional.of(hidden));
+        echoSandbox();
+
+        Submission result = judgeEngine.judgeStreaming(target);
+
+        assertThat(result.getStatus()).isEqualTo(SubmissionStatus.ACCEPTED);
+        verify(testResultRepository, times(2)).save(any(SubmissionTestResult.class));
+    }
+
+    @Test
+    void judgeStreaming_stopsAfterCompilationError() {
+        TestCase sample = caseWith(1L, "in-a", "out:in-a", true);
+        TestCase hidden = caseWith(2L, "in-b", "out:in-b", false);
+        Submission target = freshSubmission(sample, hidden);
+        when(testCaseRepository.findIdsByProblemIdOrderBySortOrderAsc(any()))
+                .thenReturn(List.of(1L, 2L));
+        when(testCaseRepository.findById(any())).thenReturn(Optional.of(sample));
+        when(sandbox.executeBatch(anyString(), anyList(), any(), anyLong(), anyInt()))
+                .thenReturn(List.of(ExecutionResult.compilationError("javac boom", 1)));
+
+        Submission result = judgeEngine.judgeStreaming(target);
+
+        assertThat(result.getStatus()).isEqualTo(SubmissionStatus.COMPILATION_ERROR);
+        verify(testResultRepository, times(1)).save(any(SubmissionTestResult.class));
+        verify(sandbox, times(1)).executeBatch(anyString(), anyList(), any(), anyLong(), anyInt());
+    }
+
+    @Test
+    void judgeStreaming_nativeProviderJudgesWholeProblem() {
+        TestCase sample = caseWith(1L, "in-a", "out:in-a", true);
+        TestCase hidden = caseWith(2L, "in-b", "out:in-b", false);
+        Submission target = freshSubmission(sample, hidden);
+        when(sandbox.handlesProblemsNatively()).thenReturn(true);
+        when(testCaseRepository.findByProblemIdOrderBySortOrderAsc(any()))
+                .thenReturn(List.of(sample, hidden));
+        when(sandbox.judgeTestCases(any(), anyList(), anyString(), any())).thenReturn(List.of(
+                ExecutionResult.providerVerdict(SubmissionStatus.ACCEPTED, 5, 100),
+                ExecutionResult.providerVerdict(SubmissionStatus.ACCEPTED, 6, 100)));
+
+        Submission result = judgeEngine.judgeStreaming(target);
+
+        assertThat(result.getStatus()).isEqualTo(SubmissionStatus.ACCEPTED);
+        verify(sandbox).judgeTestCases(eq(target.getProblem()), eq(List.of(sample, hidden)),
+                anyString(), any());
+        verify(testResultRepository, times(2)).save(any(SubmissionTestResult.class));
+    }
+
+    @Test
+    void runSamples_usesOnlyProvidedSamples() {
+        TestCase sample = caseWith(1L, "in-a", "out:in-a", true);
+        echoSandbox();
+
+        JudgeEngine.TestRunSummary summary =
+                judgeEngine.runSamples(problem, List.of(sample), "src", Language.JAVA);
+
+        assertThat(summary.status()).isEqualTo(SubmissionStatus.ACCEPTED);
+        verify(sandbox).executeBatch(anyString(), eq(List.of("in-a")), any(), anyLong(), anyInt());
+    }
+
+    @Test
+    void runSamples_rejectsEmptySamples() {
+        assertThatThrownBy(() -> judgeEngine.runSamples(problem, List.of(), "src", Language.JAVA))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

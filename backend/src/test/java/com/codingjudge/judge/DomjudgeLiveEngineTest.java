@@ -11,6 +11,7 @@ import com.codingjudge.model.enums.Difficulty;
 import com.codingjudge.model.enums.Language;
 import com.codingjudge.model.enums.SubmissionStatus;
 import com.codingjudge.repository.SubmissionTestResultRepository;
+import com.codingjudge.repository.TestCaseRepository;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -61,6 +62,7 @@ class DomjudgeLiveEngineTest {
                 new DomjudgeProblemMirror(client, contest), contest, 2000, 300000);
         testResults = mock(SubmissionTestResultRepository.class);
         engine = new JudgeEngine(provider, new OutputComparator(), testResults,
+                mock(TestCaseRepository.class),
                 new JavaExecutor(), new CppExecutor(), new PythonExecutor());
         System.out.println("[DomjudgeLive] contest=" + contest + " baseUrl=" + baseUrl);
     }

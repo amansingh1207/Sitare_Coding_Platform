@@ -11,6 +11,7 @@ import com.codingjudge.model.entity.TestCase;
 import com.codingjudge.model.enums.Language;
 import com.codingjudge.model.enums.SubmissionStatus;
 import com.codingjudge.repository.SubmissionTestResultRepository;
+import com.codingjudge.repository.TestCaseRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +29,7 @@ public class JudgeEngine {
     private final CodeExecutionService sandbox;
     private final OutputComparator comparator;
     private final SubmissionTestResultRepository testResultRepository;
+    private final TestCaseRepository testCaseRepository;
     private final JavaExecutor javaExecutor;
     private final CppExecutor cppExecutor;
     private final PythonExecutor pythonExecutor;
@@ -44,12 +46,14 @@ public class JudgeEngine {
     public JudgeEngine(CodeExecutionService sandbox,
                        OutputComparator comparator,
                        SubmissionTestResultRepository testResultRepository,
+                       TestCaseRepository testCaseRepository,
                        JavaExecutor javaExecutor,
                        CppExecutor cppExecutor,
                        PythonExecutor pythonExecutor) {
         this.sandbox = sandbox;
         this.comparator = comparator;
         this.testResultRepository = testResultRepository;
+        this.testCaseRepository = testCaseRepository;
         this.javaExecutor = javaExecutor;
         this.cppExecutor = cppExecutor;
         this.pythonExecutor = pythonExecutor;
@@ -74,6 +78,86 @@ public class JudgeEngine {
     }
 
     public Submission judge(Submission submission) {
+        return judgeWithTests(submission, submission.getProblem().getTestCases());
+    }
+
+    /**
+     * Judges a submission one test case at a time, keeping memory bounded.
+     *
+     * <p>Unlike {@link #judge(Submission)}, this never holds the whole test
+     * suite in memory: only test-case ids are listed up front, then each row
+     * is loaded, executed, persisted and dropped before the next one starts.
+     * Verdict folding, row contents and the compilation-error short-circuit
+     * match {@link #judge(Submission)} exactly.
+     *
+     * <p>Providers that judge whole problems natively (DOMjudge) still take
+     * the whole-list path; those run on self-hosted infrastructure where the
+     * suite fits in memory.
+     */
+    public Submission judgeStreaming(Submission submission) {
+        Problem problem = submission.getProblem();
+        if (sandbox.handlesProblemsNatively()) {
+            List<TestCase> all = testCaseRepository
+                    .findByProblemIdOrderBySortOrderAsc(problem.getId());
+            return judgeWithTests(submission, all);
+        }
+        Language language = submission.getLanguage();
+        LanguageExecutor executor = getExecutor(language);
+        long timeoutMs = problem.getTimeLimitMs();
+        int memoryLimitMb = problem.getMemoryLimitMb();
+        List<Long> ids = testCaseRepository
+                .findIdsByProblemIdOrderBySortOrderAsc(problem.getId());
+
+        boolean allAccepted = true;
+        SubmissionStatus verdict = null;
+        long maxRuntimeMs = 0;
+        long maxMemoryKb = 0;
+        for (Long id : ids) {
+            TestCase testCase = testCaseRepository.findById(id)
+                    .orElseThrow(() -> new IllegalStateException("Test case vanished: " + id));
+            List<ExecutionResult> execResults = sandbox.executeBatch(
+                    submission.getSourceCode(), List.of(testCase.getInputData()),
+                    executor, timeoutMs, memoryLimitMb);
+            if (execResults.isEmpty()) {
+                throw new IllegalStateException("Execution produced no result for test case " + id);
+            }
+            ExecutionResult execResult = execResults.get(0);
+            SubmissionStatus testStatus = execResult.hasProviderVerdict()
+                    ? execResult.providerVerdict()
+                    : determineTestStatus(execResult, testCase.getExpectedOutput());
+
+            SubmissionTestResult result = new SubmissionTestResult();
+            result.setSubmission(submission);
+            result.setTestCase(testCase);
+            result.setRuntimeMs((int) Math.min(execResult.runtimeMs(), Integer.MAX_VALUE));
+            result.setMemoryUsedKb((int) Math.min(execResult.memoryUsedKb(), Integer.MAX_VALUE));
+            result.setStatus(testStatus);
+            result.setActualOutput(visibleOutput(execResult));
+            testResultRepository.save(result);
+
+            maxRuntimeMs = Math.max(maxRuntimeMs, execResult.runtimeMs());
+            maxMemoryKb = Math.max(maxMemoryKb, execResult.memoryUsedKb());
+            if (testStatus != SubmissionStatus.ACCEPTED) {
+                allAccepted = false;
+                verdict = worseOf(verdict, testStatus);
+            }
+            if (testStatus == SubmissionStatus.COMPILATION_ERROR) {
+                break;
+            }
+        }
+
+        submission.setStatus(allAccepted ? SubmissionStatus.ACCEPTED : verdict);
+        if (maxRuntimeMs > 0) {
+            submission.setRuntimeMs((int) Math.min(maxRuntimeMs, Integer.MAX_VALUE));
+        }
+        if (maxMemoryKb > 0) {
+            submission.setMemoryUsedKb((int) Math.min(maxMemoryKb, Integer.MAX_VALUE));
+        }
+        submission.setJudgedAt(Instant.now());
+        return submission;
+    }
+
+    private Submission judgeWithTests(Submission submission, List<TestCase> testCases) {
         Language language = submission.getLanguage();
         LanguageExecutor executor = getExecutor(language);
 
@@ -82,7 +166,7 @@ public class JudgeEngine {
 
         // Compilation + every test case, folded into one verdict.
         TestRunSummary summary = executeAgainst(
-                submission.getProblem().getTestCases(),
+                testCases,
                 submission.getSourceCode(),
                 executor,
                 timeoutMs,
@@ -111,15 +195,14 @@ public class JudgeEngine {
     }
 
     /**
-     * Runs code against a problem's sample test cases only, persisting nothing.
+     * Runs code against the given sample test cases only, persisting nothing.
      *
-     * This backs the editor's "Run" button. Hidden test cases are never touched,
-     * so running can never reveal them, and no Submission row is created.
+     * This backs the editor's "Run" button. Callers pass pre-loaded samples
+     * so hidden test cases are never touched: running can never reveal them,
+     * and no Submission row is created.
      */
-    public TestRunSummary runSamples(Problem problem, String sourceCode, Language language) {
-        List<TestCase> samples = problem.getTestCases().stream()
-                .filter(testCase -> Boolean.TRUE.equals(testCase.getSample()))
-                .toList();
+    public TestRunSummary runSamples(Problem problem, List<TestCase> samples,
+                                     String sourceCode, Language language) {
         if (samples.isEmpty()) {
             throw new IllegalArgumentException(
                     "Problem '" + problem.getSlug() + "' has no sample test cases to run against");

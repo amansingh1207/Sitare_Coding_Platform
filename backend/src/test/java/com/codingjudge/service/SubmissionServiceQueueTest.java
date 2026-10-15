@@ -1,6 +1,7 @@
 package com.codingjudge.service;
 
 import com.codingjudge.judge.JudgeEngine;
+import com.codingjudge.model.dto.request.SubmitRequest;
 import com.codingjudge.model.entity.Problem;
 import com.codingjudge.model.entity.Submission;
 import com.codingjudge.model.entity.TestCase;
@@ -10,6 +11,7 @@ import com.codingjudge.model.enums.SubmissionStatus;
 import com.codingjudge.repository.ProblemRepository;
 import com.codingjudge.repository.SubmissionRepository;
 import com.codingjudge.repository.SubmissionTestResultRepository;
+import com.codingjudge.repository.TestCaseRepository;
 import com.codingjudge.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +42,7 @@ class SubmissionServiceQueueTest {
 
     @Mock private SubmissionRepository submissionRepository;
     @Mock private SubmissionTestResultRepository testResultRepository;
+    @Mock private TestCaseRepository testCaseRepository;
     @Mock private UserRepository userRepository;
     @Mock private ProblemRepository problemRepository;
     @Mock private JudgeEngine judgeEngine;
@@ -55,7 +58,7 @@ class SubmissionServiceQueueTest {
         // tests never touch the manager, so keep this stub lenient.
         lenient().when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         submissionService = new SubmissionService(
-                submissionRepository, testResultRepository, userRepository,
+                submissionRepository, testResultRepository, testCaseRepository, userRepository,
                 problemRepository, judgeEngine, transactionManager, rateLimiter,
                 256, true, 0, 0, 0);
     }
@@ -79,7 +82,7 @@ class SubmissionServiceQueueTest {
 
         submissionService.judgeQueued(7L);
 
-        verify(judgeEngine, never()).judge(any());
+        verify(judgeEngine, never()).judgeStreaming(any());
         verify(submissionRepository, never()).save(any());
     }
 
@@ -88,7 +91,7 @@ class SubmissionServiceQueueTest {
         Submission submission = queuedSubmission();
         when(submissionRepository.claimQueued(eq(7L), any(), any())).thenReturn(1);
         when(submissionRepository.findById(7L)).thenReturn(Optional.of(submission));
-        when(judgeEngine.judge(any())).thenAnswer(invocation -> {
+        when(judgeEngine.judgeStreaming(any())).thenAnswer(invocation -> {
             Submission judged = invocation.getArgument(0);
             judged.setStatus(SubmissionStatus.ACCEPTED);
             return judged;
@@ -108,7 +111,7 @@ class SubmissionServiceQueueTest {
         Submission submission = queuedSubmission();
         when(submissionRepository.claimQueued(eq(7L), any(), any())).thenReturn(1);
         when(submissionRepository.findById(7L)).thenReturn(Optional.of(submission));
-        when(judgeEngine.judge(any())).thenThrow(new RuntimeException("provider down"));
+        when(judgeEngine.judgeStreaming(any())).thenThrow(new RuntimeException("provider down"));
         when(submissionRepository.save(any())).thenAnswer(
                 invocation -> invocation.getArgument(0));
 
@@ -128,8 +131,40 @@ class SubmissionServiceQueueTest {
         submissionService.judgeQueued(7L);
 
         // Load throws -> INTERNAL_ERROR marking reloads, finds nothing, saves nothing.
-        verify(judgeEngine, never()).judge(any());
+        verify(judgeEngine, never()).judgeStreaming(any());
         verify(submissionRepository, never()).save(any());
+    }
+
+    @Test
+    void runUsesSamplesOnlyAndMapsResult() {
+        Problem problem = new Problem();
+        ReflectionTestUtils.setField(problem, "id", 9L);
+        problem.setTimeLimitMs(2000);
+        problem.setMemoryLimitMb(256);
+        TestCase sample = new TestCase();
+        sample.setInputData("5");
+        sample.setExpectedOutput("10");
+        sample.setSample(true);
+        SubmitRequest request = new SubmitRequest();
+        request.setProblemId(9L);
+        request.setLanguage("JAVA");
+        request.setSourceCode("src");
+        when(userRepository.findByEmail("u@uni.edu"))
+                .thenReturn(Optional.of(new User()));
+        when(problemRepository.findById(9L)).thenReturn(Optional.of(problem));
+        when(testCaseRepository.findByProblemIdAndSampleTrueOrderBySortOrderAsc(9L))
+                .thenReturn(List.of(sample));
+        JudgeEngine.TestRunSummary summary = new JudgeEngine.TestRunSummary(
+                List.of(new JudgeEngine.TestOutcome(
+                        sample, SubmissionStatus.ACCEPTED, "10", 5, 100)),
+                SubmissionStatus.ACCEPTED, 5, 100);
+        when(judgeEngine.runSamples(eq(problem), eq(List.of(sample)), eq("src"), eq(Language.JAVA)))
+                .thenReturn(summary);
+
+        var response = submissionService.run("u@uni.edu", request);
+
+        assertThat(response.getStatus()).isEqualTo("ACCEPTED");
+        verify(problemRepository, never()).findWithTestCasesById(any());
     }
 
     @Test

@@ -10,6 +10,7 @@ import com.codingjudge.model.enums.Difficulty;
 import com.codingjudge.model.enums.Language;
 import com.codingjudge.model.enums.SubmissionStatus;
 import com.codingjudge.repository.SubmissionTestResultRepository;
+import com.codingjudge.repository.TestCaseRepository;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -54,6 +55,7 @@ class Judge0LiveEngineTest {
                 new Judge0ExecutionService(client, 250, 120_000, perProcess);
         engine = new JudgeEngine(provider, new OutputComparator(),
                 mock(SubmissionTestResultRepository.class),
+                mock(TestCaseRepository.class),
                 new JavaExecutor(), new CppExecutor(), new PythonExecutor());
 
         problem = new Problem();
