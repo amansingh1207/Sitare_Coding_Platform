@@ -62,9 +62,6 @@ public class AdminService {
         this.submissionRepository = submissionRepository;
     }
 
-    /** Test-case rows written before the session is flushed and cleared. */
-    private static final int IMPORT_BATCH_SIZE = 25;
-
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -186,7 +183,6 @@ public class AdminService {
 
                 int order = 0;
                 int sampleCount = 0;
-                int sinceFlush = 0;
                 for (Map.Entry<String, String[]> test : sampleFiles.entrySet()) {
                     TestCase tc = new TestCase();
                     tc.setProblem(saved);
@@ -196,9 +192,10 @@ public class AdminService {
                     tc.setSortOrder(order++);
                     testCaseRepository.save(tc);
                     sampleCount++;
-                    if (++sinceFlush % IMPORT_BATCH_SIZE == 0) {
-                        saved = flushImportBatch(saved);
-                    }
+                    // Flush every row: test files range from bytes to megabytes,
+                    // so a row-count batch would still let one big problem
+                    // accumulate tens of MB in the session and OOM the heap.
+                    saved = flushImportBatch(saved);
                 }
                 int hiddenCount = 0;
                 for (Map.Entry<String, String[]> test : secretFiles.entrySet()) {
@@ -210,9 +207,7 @@ public class AdminService {
                     tc.setSortOrder(order++);
                     testCaseRepository.save(tc);
                     hiddenCount++;
-                    if (++sinceFlush % IMPORT_BATCH_SIZE == 0) {
-                        saved = flushImportBatch(saved);
-                    }
+                    saved = flushImportBatch(saved);
                 }
 
                 results.add(new ImportedProblemSummary(slug, title, "CREATED",

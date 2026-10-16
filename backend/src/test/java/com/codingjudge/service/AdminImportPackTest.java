@@ -130,6 +130,30 @@ class AdminImportPackTest {
     }
 
     @Test
+    void importManyPairsKeepsOrderAcrossFlushes() {
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("bulk/statement.html", ALPHA_STATEMENT);
+        for (int i = 0; i < 30; i++) {
+            String name = String.format("t%02d", i);
+            files.put("bulk/tests/secret/" + name + ".in", String.valueOf(i));
+            files.put("bulk/tests/secret/" + name + ".ans", String.valueOf(i * 2));
+        }
+
+        ImportPackResponse response = importPack(files, "Week 5");
+
+        assertThat(response.getTotalHidden()).isEqualTo(30);
+        Problem bulk = problemRepository.findBySlug("bulk").orElseThrow();
+        List<TestCase> cases = testCaseRepository
+                .findByProblemIdOrderBySortOrderAsc(bulk.getId());
+        assertThat(cases).hasSize(30);
+        for (int i = 0; i < 30; i++) {
+            assertThat(cases.get(i).getSortOrder()).isEqualTo(i);
+            assertThat(cases.get(i).getInputData()).isEqualTo(String.valueOf(i));
+            assertThat(cases.get(i).getExpectedOutput()).isEqualTo(String.valueOf(i * 2));
+        }
+    }
+
+    @Test
     void rejectsPackWithoutStatements() {
         Map<String, String> files = new LinkedHashMap<>();
         files.put("gamma/tests/sample/a.in", "5");
