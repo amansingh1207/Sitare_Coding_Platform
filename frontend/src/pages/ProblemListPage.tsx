@@ -105,7 +105,10 @@ export function ProblemListPage() {
     setError(null);
     try {
       const [data, solved] = await Promise.all([
-        problemsApi.list(filters),
+        // size=100 (backend max) so the whole catalogue renders: the list has
+        // no pagination controls, and the default page of 20 silently hid
+        // every problem past the first four weeks.
+        problemsApi.list({ ...filters, size: 100 }),
         submissionsApi.solvedIds(),
       ]);
       setProblems(data.content);

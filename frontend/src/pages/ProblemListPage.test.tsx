@@ -62,4 +62,10 @@ describe('ProblemListPage', () => {
     expect(screen.getByLabelText('2 of 3 solved')).toBeTruthy();
     expect(screen.getByText('2/3')).toBeTruthy();
   });
+
+  it('requests the whole catalogue so later weeks are visible', async () => {
+    await renderSolved();
+
+    expect(String(mockFetch.mock.calls[0][0])).toContain('size=100');
+  });
 });
